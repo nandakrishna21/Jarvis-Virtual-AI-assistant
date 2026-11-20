@@ -3,12 +3,16 @@
 Local, lightweight Windows assistant that coordinates specialist agents through one orchestrator, one SQLite database and one local Ollama model.
 
 ## Status
-Phases 1-11 complete. Backend: **153 tests passing** (`pytest tests -q`, isolated test database). Frontend: Vite production build clean, oxlint **0 errors / 0 warnings**, route-level code splitting. Production build serves the dashboard and the API from one process at **http://127.0.0.1:8000** (89 routes).
+Phases 1-12 complete. Backend: **153 tests passing** (`pytest tests -q`, isolated test database). Frontend: Vite production build clean, oxlint **0 errors / 0 warnings**, route-level code splitting. Production build serves the dashboard and the API from one process at **http://127.0.0.1:8000** (89 routes).
 
 ## What’s new
+- **Voice Agent**: talk to JARVIS like a person - it listens, answers out loud, then listens again. Barge-in, wake word, follow-ups ("and my overdue ones?"), and every chat intent works by voice. Approvals still need a click.
+- **Installable mobile app**: JARVIS is a PWA. Add it to the home screen from the browser, use the bottom nav bar, and reach it from your phone over Wi-Fi with LAN mode.
+- **Redux Toolkit state**: the voice conversation and the resume "My details" form are kept in a store, survive navigation and app restarts, and work offline from the cached shell.
 - **Chat-first Command Center**: greets you on open, holographic orb, quick commands, inline approval cards.
 - **Approval before every action**: mutating requests become proposals → you Approve/Reject → only then executed.
 - **Resume Generator**: paste a job description → get a resume built from *your own* old resume, with the JD skills first, bullets re-ordered, and a coverage report that lists the requirements you still cannot prove.
+- **My details form**: fill your contact details, summary, skills, experience, projects and education once - the generator, document studio and job matching all read from it.
 - **Email Access**: connect Gmail, read recruiter/interview/job-alert mail, and let JARVIS prepare the reply - you send it yourself.
 - **Document Studio**: structured resume sections (summary/experience/education/projects) + job-specific resume & cover-letter generation with numbered versions and download. Ask "tailor my resume for job 3" and approve it.
 - **Honest job matching**: skills are read from the real posting, seniority is measured ("No experience required" → entry), and every score shows its components (skills 35 / experience 25 / responsibilities 20 / location 10 / education 10) plus what is missing.
@@ -16,9 +20,9 @@ Phases 1-11 complete. Backend: **153 tests passing** (`pytest tests -q`, isolate
 - **Bulk decisions + CSV export**: select several matches to approve (shortlist) or reject in one action, or export the ranked list to CSV.
 - **Hiring news that works**: Hacker News "Ask HN: Who is hiring?" plus WeWorkRemotely, Remotive and Arbeitnow, with weighted relevance so Python/AI/backend roles rank first.
 - **AI providers**: Ollama (local, default fallback), **NVIDIA NIM** (your key, active now), Gemini and OpenRouter - switchable from Settings with automatic fallback to Ollama.
-- **Optional API-key guard**: set `JARVIS_API_KEY` to require an `X-API-Key` header on every mutating request.
+- **Optional API-key guard**: set `JARVIS_API_KEY` to require an `X-API-Key` header on every mutating request (and on every call in LAN mode).
 - **Automation**: n8n 2.46.7 installed (`C:\JARVIS\n8n`) with 5 workflows; on 8 GB RAM n8n may OOM so JARVIS auto-falls back to native execution (after approval).
-- **Pages**: Command Center, AI Assistant, Job Discovery, Matched Jobs, Resume Intelligence, Resume Generator, Email Access, Document Studio, Application Manager, Interviews, Automation Center, Analytics, Settings.
+- **Pages**: Command Center, AI Assistant, Voice Agent, Job Discovery, Matched Jobs, Resume Intelligence, Resume Generator, Email Access, Document Studio, Application Manager, Interviews, Automation Center, Analytics, Settings.
 
 ## Run (production)
 ```powershell
@@ -31,6 +35,17 @@ powershell -ExecutionPolicy Bypass -File C:\JARVIS\scripts\start_prod.ps1
 ```
 Open **http://127.0.0.1:8000**. Stop with `C:\JARVIS\scripts\stop_prod.ps1`.
 Windows autostart is already enabled (`/system/startup/enable` → `Startup\JARVIS.cmd`), so JARVIS starts when you log in.
+
+## Run on your phone (LAN mode)
+```powershell
+# 1. set a key (hidden prompt) - required once the server is on the network
+cd C:\JARVIS\backend
+.\.venv\Scripts\python scripts\set_api_key.py
+
+# 2. start on the local network; the script prints the phone URL
+powershell -ExecutionPolicy Bypass -File C:\JARVIS\scripts\start_prod.ps1 -Lan
+```
+Open the printed `http://192.168.x.x:8000` on the phone, enter the key once, then use the browser menu - **Install app / Add to Home Screen**. See `docs/MOBILE_APP.md`.
 
 ## Run (development)
 ```powershell
@@ -67,6 +82,7 @@ Open http://127.0.0.1:5173
 | LLM provider | `/system/llm` (GET/PUT) |
 | Security | `/system/auth` (GET) |
 | Voice (push-to-talk) | `/voice/transcribe`, `/voice/tts` |
+| Voice agent (conversation) | `/voice/agent`, `/voice/agent/help` |
 | Startup controls | `/system/startup/enable`, `/system/startup/disable` |
 | System monitor | `/system/status`, `/system/unload-model` |
 | Backup / restore | `/system/backup`, `/system/backups`, `/system/restore?name=<file>` |
@@ -128,14 +144,18 @@ cd C:\JARVIS\backend
 | `docs/HIRING_NEWS.md` | news sources |
 | `docs/PRODUCTIVITY.md` | tasks, schedules, developer, files |
 | `docs/DASHBOARD.md` | frontend walkthrough |
-| `docs/VOICE.md` | voice assistant |
+| `docs/VOICE.md` | voice assistant and the voice agent |
+| `docs/MOBILE_APP.md` | install on a phone, LAN mode, API key |
 | `docs/AUTOMATION.md` | n8n workflows and native fallback |
 | `docs/PROGRESS.md` | phase checklist and test counts |
 
-## Still pending (one user action)
+## Still pending (user actions)
 - **Gmail OAuth consent** — see `docs/GMAIL_SETUP.md`:
   ```powershell
   cd C:\JARVIS\backend
   .\.venv\Scripts\python scripts\gmail_auth.py
   ```
   Needs `C:\JARVIS\credentials\credentials.json`. Add `--send` to also get the `gmail.send` scope.
+- **Rotate the NVIDIA key** (the current one was pasted into a chat) — `scripts\set_nvidia_key.py`.
+- **Upload the real resume** and fill the **My details** form — the stored resume is still a stub.
+- **Set the job-search preferences** in Settings (roles, locations, salary, seniority).

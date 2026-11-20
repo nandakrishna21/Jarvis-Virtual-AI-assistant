@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.agents.job_discovery import resume as resume_module
-from app.database.models import ResumeProfile
+from app.database.models import ResumeProfile, ResumeSection
 from app.database.session import get_db
 
 router = APIRouter(tags=["resumes"])

@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
     nvidia_fallback_models: str = "meta/muse-glimmer-30b,nvidia/nemotron-3.5-lightning-30b-a3b"
     api_key: str = ""  # optional local API key for mutating requests
+    jarvis_api_key: str = ""  # same thing, readable as JARVIS_API_KEY from .env
+    jarvis_lan_mode: bool = False  # when true the server is reachable from the LAN and every API call needs the API key
     user_name: str = "Nanda Krishna Talari"
     user_location: str = "Hyderabad, India"
 

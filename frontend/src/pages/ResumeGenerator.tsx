@@ -1,18 +1,17 @@
 import { useEffect, useState } from 'react'
 import { api } from '../services/api'
+import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { Wand2, FileText, Download, RefreshCw, Sparkles, AlertTriangle, Check, Plus, X, Save, User } from 'lucide-react'
 
-type Entry = { title: string; organization: string; location: string; start_date: string; end_date: string; description: string }
-type Details = {
-  name: string; email: string; phone: string; location: string; links: string[]
-  summary: string; skills: string[]
-  experience: Entry[]; education: Entry[]; projects: Entry[]
-}
-
-const EMPTY_ENTRY: Entry = { title: '', organization: '', location: '', start_date: '', end_date: '', description: '' }
-const EMPTY: Details = { name: '', email: '', phone: '', location: '', links: [], summary: '', skills: [], experience: [], education: [], projects: [] }
+type Group = 'experience' | 'education' | 'projects'
 
 export default function ResumeGenerator() {
+  const dispatch = useAppDispatch()
+  const details = useAppSelector((s) => s.resume.details)
+  const resumeId = useAppSelector((s) => s.resume.resumeId)
+  const resumeMessage = useAppSelector((s) => s.resume.message)
+  const resumeDirty = useAppSelector((s) => s.resume.dirty)
+
   const [jd, setJd] = useState('')
   const [role, setRole] = useState('')
   const [company, setCompany] = useState('')
@@ -22,10 +21,8 @@ export default function ResumeGenerator() {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string|null>(null)
   const [activeTab, setActiveTab] = useState<'generate'|'details'|'versions'>('generate')
-  const [details, setDetails] = useState<Details>(EMPTY)
   const [skillInput, setSkillInput] = useState('')
   const [linkInput, setLinkInput] = useState('')
-  const [resumeId, setResumeId] = useState<number|null>(null)
 
   async function loadVersions() {
     try {
@@ -38,10 +35,11 @@ export default function ResumeGenerator() {
     try {
       const list = await api.get<any>('/resumes')
       const activeId = list?.active_id ?? list?.resumes?.[0]?.id ?? null
-      setResumeId(activeId)
       if (!activeId) return
       const r = await api.get<any>(`/resumes/${activeId}/details`)
-      if (r?.details) setDetails({ ...EMPTY, ...r.details })
+      if (r?.details) {
+        dispatch({ type: 'resume/load', payload: { resumeId: activeId, details: r.details } })
+      }
     } catch {}
   }
 
@@ -75,49 +73,51 @@ export default function ResumeGenerator() {
   async function saveDetails() {
     if (!resumeId) { setMsg('Upload a resume first (Resume Intelligence page).'); return }
     setBusy(true); setMsg(null)
+    dispatch({ type: 'resume/saving', payload: true })
     try {
       const r = await api.put<any>(`/resumes/${resumeId}/details`, details)
-      if (r?.error) setMsg(r.error)
+      if (r?.error) {
+        dispatch({ type: 'resume/error', payload: r.error })
+        setMsg(r.error)
+      }
       else {
+        dispatch({ type: 'resume/saved' })
         setMsg(`Saved. Resume text rebuilt from your details (${r?.resume?.text_length || 0} chars, ${r?.skills?.length || 0} skills).`)
         await loadDetails()
       }
-    } catch(e:any){ setMsg(e?.message||'Could not save details') }
+    } catch(e:any){
+      dispatch({ type: 'resume/error', payload: e?.message||'Could not save details' })
+      setMsg(e?.message||'Could not save details')
+    }
     finally { setBusy(false) }
   }
 
-  function updateEntry(group: 'experience'|'education'|'projects', index: number, field: keyof Entry, value: string) {
-    setDetails(prev => {
-      const list = [...prev[group]]
-      list[index] = { ...list[index], [field]: value }
-      return { ...prev, [group]: list }
-    })
-  }
+  const setField = (field: string, value: any) =>
+    dispatch({ type: 'resume/setField', payload: { field, value } })
 
-  function addEntry(group: 'experience'|'education'|'projects') {
-    setDetails(prev => ({ ...prev, [group]: [...prev[group], { ...EMPTY_ENTRY }] }))
-  }
+  const updateEntry = (group: Group, index: number, field: string, value: string) =>
+    dispatch({ type: 'resume/setEntry', payload: { section: group, index, value: { [field]: value } } })
 
-  function removeEntry(group: 'experience'|'education'|'projects', index: number) {
-    setDetails(prev => ({ ...prev, [group]: prev[group].filter((_, i) => i !== index) }))
-  }
+  const addEntry = (group: Group) => dispatch({ type: 'resume/addEntry', payload: { section: group } })
+  const removeEntry = (group: Group, index: number) =>
+    dispatch({ type: 'resume/removeEntry', payload: { section: group, index } })
 
   function addSkill() {
     const value = skillInput.trim().toLowerCase()
     if (!value || details.skills.includes(value)) { setSkillInput(''); return }
-    setDetails(prev => ({ ...prev, skills: [...prev.skills, value] })); setSkillInput('')
+    setField('skills', [...details.skills, value]); setSkillInput('')
   }
 
   function addLink() {
     const value = linkInput.trim()
     if (!value || details.links.includes(value)) { setLinkInput(''); return }
-    setDetails(prev => ({ ...prev, links: [...prev.links, value] })); setLinkInput('')
+    setField('links', [...details.links, value]); setLinkInput('')
   }
 
   const analysis = result?.analysis
   const content = result?.content || result?.document?.content || ''
 
-  const entryForm = (group: 'experience'|'education'|'projects', label: string) => (
+  const entryForm = (group: Group, label: string) => (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <div className="text-xs text-[var(--muted)]">{label}</div>
@@ -151,7 +151,7 @@ export default function ResumeGenerator() {
 
   return (
     <div className="space-y-4">
-      <div className="glass-strong rounded-2xl p-5">
+      <div className="glass-strong rounded-2xl p-4 sm:p-5">
         <div className="flex items-center gap-2 text-cyan-100"><Wand2 size={18}/><h1 className="text-lg font-semibold">Resume Generator</h1></div>
         <p className="text-sm text-[var(--muted)] mt-1">Paste a job description. JARVIS reads your old resume, keeps every fact you wrote, and re-orders it around that job - then tells you exactly which requirements you still lack.</p>
         <div className="mt-4 flex flex-wrap gap-2 text-sm">
@@ -160,6 +160,7 @@ export default function ResumeGenerator() {
           <button onClick={()=>{ setActiveTab('versions'); loadVersions() }} className={`px-3 py-1.5 rounded-lg border ${activeTab==='versions' ? 'border-cyan-400/40 text-cyan-200 bg-cyan-500/10' : 'border-[var(--border-soft)] text-[var(--muted)]'}`}>Saved versions</button>
         </div>
         {msg && <div className="mt-3 text-sm text-slate-200">{msg}</div>}
+        {resumeMessage && !msg && <div className="mt-3 text-xs text-[var(--muted)]">{resumeMessage}</div>}
       </div>
 
       {activeTab === 'generate' && (
@@ -235,19 +236,19 @@ export default function ResumeGenerator() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="glass rounded-2xl p-4 space-y-3">
             <div className="flex items-center gap-2 text-cyan-100"><User size={16}/><span className="text-sm font-medium">Your details</span></div>
-            <div className="text-xs text-[var(--muted)]">Fill this in once. The Resume Generator, Document Studio and job matching all read from it - nothing is invented, only what you type here.</div>
+            <div className="text-xs text-[var(--muted)]">Fill this in once. The Resume Generator, Document Studio and job matching all read from it - nothing is invented, only what you type here. Your edits are kept on this device even if you close the app.</div>
             <div className="grid grid-cols-2 gap-2">
-              <input value={details.name} onChange={e=>setDetails({...details, name: e.target.value})} placeholder="Full name" className="px-3 py-2 rounded-lg text-sm bg-black/20 border border-[var(--border-soft)]" />
-              <input value={details.location} onChange={e=>setDetails({...details, location: e.target.value})} placeholder="City, Country" className="px-3 py-2 rounded-lg text-sm bg-black/20 border border-[var(--border-soft)]" />
-              <input value={details.email} onChange={e=>setDetails({...details, email: e.target.value})} placeholder="Email" className="px-3 py-2 rounded-lg text-sm bg-black/20 border border-[var(--border-soft)]" />
-              <input value={details.phone} onChange={e=>setDetails({...details, phone: e.target.value})} placeholder="Phone" className="px-3 py-2 rounded-lg text-sm bg-black/20 border border-[var(--border-soft)]" />
+              <input value={details.name} onChange={e=>setField('name', e.target.value)} placeholder="Full name" className="px-3 py-2 rounded-lg text-sm bg-black/20 border border-[var(--border-soft)]" />
+              <input value={details.location} onChange={e=>setField('location', e.target.value)} placeholder="City, Country" className="px-3 py-2 rounded-lg text-sm bg-black/20 border border-[var(--border-soft)]" />
+              <input value={details.email} onChange={e=>setField('email', e.target.value)} placeholder="Email" className="px-3 py-2 rounded-lg text-sm bg-black/20 border border-[var(--border-soft)]" />
+              <input value={details.phone} onChange={e=>setField('phone', e.target.value)} placeholder="Phone" className="px-3 py-2 rounded-lg text-sm bg-black/20 border border-[var(--border-soft)]" />
             </div>
             <div>
               <div className="text-xs text-[var(--muted)] mb-1">Links (LinkedIn, GitHub, portfolio)</div>
               <div className="flex flex-wrap gap-1.5 mb-2">
                 {details.links.map(l => (
                   <span key={l} className="text-xs px-2 py-1 rounded-full border border-cyan-400/20 text-cyan-100 inline-flex items-center gap-1">
-                    {l}<button onClick={()=>setDetails({...details, links: details.links.filter(x=>x!==l)})}><X size={11}/></button>
+                    {l}<button onClick={()=>setField('links', details.links.filter(x=>x!==l))}><X size={11}/></button>
                   </span>
                 ))}
               </div>
@@ -258,7 +259,7 @@ export default function ResumeGenerator() {
             </div>
             <div>
               <div className="text-xs text-[var(--muted)] mb-1">Professional summary</div>
-              <textarea value={details.summary} onChange={e=>setDetails({...details, summary: e.target.value})} rows={4}
+              <textarea value={details.summary} onChange={e=>setField('summary', e.target.value)} rows={4}
                 placeholder="2-3 lines about what you do. The AI may polish this for a specific JD."
                 className="w-full px-3 py-2 rounded-lg text-sm bg-black/20 border border-[var(--border-soft)]" />
             </div>
@@ -267,7 +268,7 @@ export default function ResumeGenerator() {
               <div className="flex flex-wrap gap-1.5 mb-2">
                 {details.skills.map(s => (
                   <span key={s} className="text-xs px-2 py-1 rounded-full bg-cyan-500/10 border border-cyan-400/20 text-cyan-100 inline-flex items-center gap-1">
-                    {s}<button onClick={()=>setDetails({...details, skills: details.skills.filter(x=>x!==s)})}><X size={11}/></button>
+                    {s}<button onClick={()=>setField('skills', details.skills.filter(x=>x!==s))}><X size={11}/></button>
                   </span>
                 ))}
               </div>
@@ -276,7 +277,10 @@ export default function ResumeGenerator() {
                 <button onClick={addSkill} className="px-3 py-2 rounded-lg border border-cyan-400/30 text-cyan-200"><Plus size={14}/></button>
               </div>
             </div>
-            <button onClick={saveDetails} disabled={busy} className="px-4 py-2 rounded-lg bg-cyan-500/20 border border-cyan-400/30 text-cyan-100 hover:bg-cyan-500/30 disabled:opacity-50 inline-flex items-center gap-2"><Save size={14}/>Save details</button>
+            <div className="flex items-center gap-3">
+              <button onClick={saveDetails} disabled={busy} className="px-4 py-2 rounded-lg bg-cyan-500/20 border border-cyan-400/30 text-cyan-100 hover:bg-cyan-500/30 disabled:opacity-50 inline-flex items-center gap-2"><Save size={14}/>Save details</button>
+              {resumeDirty && <span className="text-xs text-amber-300">Unsaved changes - kept on this device</span>}
+            </div>
           </div>
 
           <div className="space-y-4">

@@ -1,0 +1,25 @@
+{
+  "name": "JARVIS - Personal AI Assistant",
+  "short_name": "JARVIS",
+  "description": "Local AI job-search assistant: voice agent, job matching, resume generation, hiring news, tasks and approvals.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "portrait-primary",
+  "background_color": "#050b14",
+  "theme_color": "#050b14",
+  "categories": ["productivity", "utilities", "business"],
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Voice Agent", "short_name": "Voice", "url": "/voice", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
+    { "name": "AI Assistant", "short_name": "Ask", "url": "/assistant", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Matched Jobs", "short_name": "Jobs", "url": "/matched", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Resume Generator", "short_name": "Resume", "url": "/resume-generator", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

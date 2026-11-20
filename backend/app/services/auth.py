@@ -15,10 +15,13 @@ def api_key() -> str:
     configured = getattr(settings, "api_key", "")
     if not isinstance(configured, str):
         configured = ""
+    prefixed = getattr(settings, "jarvis_api_key", "")
+    if not isinstance(prefixed, str):
+        prefixed = ""
     env = os.getenv("JARVIS_API_KEY", "") or ""
     if not isinstance(env, str):
         env = ""
-    return (configured or env).strip()
+    return (configured or prefixed or env).strip()
 
 
 def enabled() -> bool:

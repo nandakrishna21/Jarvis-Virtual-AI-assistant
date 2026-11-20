@@ -1,16 +1,33 @@
 const BASE = '/api'
+const KEY_STORAGE = 'jarvis.apiKey'
+
+export function getApiKey(): string {
+  try { return localStorage.getItem(KEY_STORAGE) || '' } catch { return '' }
+}
+
+export function setApiKey(value: string) {
+  try {
+    if (value) localStorage.setItem(KEY_STORAGE, value)
+    else localStorage.removeItem(KEY_STORAGE)
+  } catch { /* storage blocked */ }
+}
 
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const isForm = typeof FormData !== 'undefined' && init.body instanceof FormData
   const headers = new Headers(init.headers || {})
   if (!isForm && init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+  const key = getApiKey()
+  if (key && !headers.has('X-API-Key')) headers.set('X-API-Key', key)
   const res = await fetch(`${BASE}${path}`, { ...init, headers })
   const text = await res.text()
   let data: any = null
   try { data = text ? JSON.parse(text) : null } catch { data = { raw: text } }
   if (!res.ok) {
     const msg = data?.error || data?.detail || data?.message || res.statusText
-    throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg))
+    const error = new Error(typeof msg === 'string' ? msg : JSON.stringify(msg))
+    ;(error as any).status = res.status
+    ;(error as any).payload = data
+    throw error
   }
   return data as T
 }

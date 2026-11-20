@@ -89,8 +89,17 @@ async def api_prefix_stripper(request, call_next):
 
 @app.middleware("http")
 async def api_key_guard(request, call_next):
-    """Require the local API key for mutating requests when one is configured."""
-    if request.method in ("POST", "PUT", "PATCH", "DELETE") and auth_service.enabled():
+    """Require the local API key for mutating requests when one is configured.
+
+    In LAN mode the server is reachable from other devices, so every API call
+    (reads included) needs the key. The app shell and static files stay open
+    so the phone can load the unlock screen first.
+    """
+    lan = bool(getattr(settings, "jarvis_lan_mode", False))
+    path = request.scope.get("path", "")
+    is_api = path.startswith("/api/") or path.startswith("/api")
+    mutating = request.method in ("POST", "PUT", "PATCH", "DELETE")
+    if auth_service.enabled() and (mutating or (lan and is_api)):
         provided = request.headers.get("x-api-key") or request.query_params.get("api_key")
         if not auth_service.check(provided):
             from fastapi.responses import JSONResponse
@@ -102,6 +111,16 @@ async def api_key_guard(request, call_next):
                     "hint": "Send the JARVIS_API_KEY value in the X-API-Key header.",
                 },
             )
+    if lan and not auth_service.enabled():
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "LAN mode needs an API key",
+                "hint": "Set JARVIS_API_KEY in backend\\.env, then restart JARVIS.",
+            },
+        )
     return await call_next(request)
 
 
@@ -145,7 +164,14 @@ async def metrics():
 
 @app.get("/system/auth")
 async def system_auth():
-    return auth_service.status()
+    status = auth_service.status()
+    status["lan_mode"] = bool(getattr(settings, "jarvis_lan_mode", False))
+    status["lan_note"] = (
+        "LAN mode is on: every API call needs the API key."
+        if status["lan_mode"]
+        else "Local-only mode: the server is not reachable from other devices."
+    )
+    return status
 
 @app.get("/system/llm")
 async def system_llm():

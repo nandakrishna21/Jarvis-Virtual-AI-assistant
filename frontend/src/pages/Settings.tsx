@@ -124,6 +124,16 @@ export default function Settings() {
             </div>
           </div>
           <div className="glass rounded-2xl p-4">
+            <div className="text-sm text-cyan-200 mb-2">Mobile app</div>
+            <div className="text-xs text-[var(--muted)] space-y-1">
+              <div>JARVIS is an installable PWA: open it on a phone and use the browser menu - Install app / Add to Home Screen.</div>
+              <div>To use it from a phone on the same Wi-Fi, start the server in LAN mode:</div>
+              <div className="text-cyan-200"><code>powershell -NoProfile -ExecutionPolicy Bypass -File C:\JARVIS\scripts\start_prod.ps1 -Lan</code></div>
+              <div>LAN mode needs <code>JARVIS_API_KEY</code> in <code>backend\.env</code>; the phone asks for it once and keeps it on the device.</div>
+              <div className="text-amber-300">Offline install (full PWA with offline shell) needs HTTPS. Over plain http:// on your LAN, add it as a home-screen shortcut - the app still works while the phone is on the same network.</div>
+            </div>
+          </div>
+          <div className="glass rounded-2xl p-4">
             <div className="text-sm text-cyan-200 mb-2">Startup</div>
             <div className="text-xs text-[var(--muted)] mb-2">Windows startup entry: {String(startup?.exists ?? startup?.enabled ?? 'unknown')}</div>
             <div className="flex gap-2">

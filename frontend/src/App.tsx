@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Layout from './components/Layout'
+import ApiKeyGate from './components/ApiKeyGate'
 
 const CommandCenter = lazy(() => import('./pages/CommandCenter'))
 const Assistant = lazy(() => import('./pages/Assistant'))
@@ -34,28 +35,30 @@ function PageFallback() {
 export default function App() {
   return (
     <QueryClientProvider client={qc}>
-      <BrowserRouter>
-        <Routes>
-          <Route element={<Layout />}>
-            <Route index element={<Suspense fallback={<PageFallback />}><CommandCenter /></Suspense>} />
-            <Route path="assistant" element={<Suspense fallback={<PageFallback />}><Assistant /></Suspense>} />
-            <Route path="jobs" element={<Suspense fallback={<PageFallback />}><JobDiscovery /></Suspense>} />
-            <Route path="jobs/all" element={<Suspense fallback={<PageFallback />}><Jobs /></Suspense>} />
-            <Route path="matched" element={<Suspense fallback={<PageFallback />}><MatchedJobs /></Suspense>} />
-            <Route path="resume" element={<Suspense fallback={<PageFallback />}><ResumeIntelligence /></Suspense>} />
-            <Route path="resume-generator" element={<Suspense fallback={<PageFallback />}><ResumeGenerator /></Suspense>} />
-            <Route path="voice" element={<Suspense fallback={<PageFallback />}><VoiceAgent /></Suspense>} />
-            <Route path="emails" element={<Suspense fallback={<PageFallback />}><EmailAccess /></Suspense>} />
-            <Route path="documents" element={<Suspense fallback={<PageFallback />}><DocumentStudio /></Suspense>} />
-            <Route path="applications" element={<Suspense fallback={<PageFallback />}><ApplicationManager /></Suspense>} />
-            <Route path="applications/legacy" element={<Suspense fallback={<PageFallback />}><Applications /></Suspense>} />
-            <Route path="interviews" element={<Suspense fallback={<PageFallback />}><Interviews /></Suspense>} />
-            <Route path="automation" element={<Suspense fallback={<PageFallback />}><AutomationCenter /></Suspense>} />
-            <Route path="analytics" element={<Suspense fallback={<PageFallback />}><Analytics /></Suspense>} />
-            <Route path="settings" element={<Suspense fallback={<PageFallback />}><Settings /></Suspense>} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+      <ApiKeyGate>
+        <BrowserRouter>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route index element={<Suspense fallback={<PageFallback />}><CommandCenter /></Suspense>} />
+              <Route path="assistant" element={<Suspense fallback={<PageFallback />}><Assistant /></Suspense>} />
+              <Route path="jobs" element={<Suspense fallback={<PageFallback />}><JobDiscovery /></Suspense>} />
+              <Route path="jobs/all" element={<Suspense fallback={<PageFallback />}><Jobs /></Suspense>} />
+              <Route path="matched" element={<Suspense fallback={<PageFallback />}><MatchedJobs /></Suspense>} />
+              <Route path="resume" element={<Suspense fallback={<PageFallback />}><ResumeIntelligence /></Suspense>} />
+              <Route path="resume-generator" element={<Suspense fallback={<PageFallback />}><ResumeGenerator /></Suspense>} />
+              <Route path="voice" element={<Suspense fallback={<PageFallback />}><VoiceAgent /></Suspense>} />
+              <Route path="emails" element={<Suspense fallback={<PageFallback />}><EmailAccess /></Suspense>} />
+              <Route path="documents" element={<Suspense fallback={<PageFallback />}><DocumentStudio /></Suspense>} />
+              <Route path="applications" element={<Suspense fallback={<PageFallback />}><ApplicationManager /></Suspense>} />
+              <Route path="applications/legacy" element={<Suspense fallback={<PageFallback />}><Applications /></Suspense>} />
+              <Route path="interviews" element={<Suspense fallback={<PageFallback />}><Interviews /></Suspense>} />
+              <Route path="automation" element={<Suspense fallback={<PageFallback />}><AutomationCenter /></Suspense>} />
+              <Route path="analytics" element={<Suspense fallback={<PageFallback />}><Analytics /></Suspense>} />
+              <Route path="settings" element={<Suspense fallback={<PageFallback />}><Settings /></Suspense>} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </ApiKeyGate>
     </QueryClientProvider>
   )
 }

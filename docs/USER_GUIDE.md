@@ -14,6 +14,14 @@ powershell -ExecutionPolicy Bypass -File C:\JARVIS\scripts\start_prod.ps1
 ```
 Then open **http://127.0.0.1:8000**. Stop it with `C:\JARVIS\scripts\stop_prod.ps1`.
 
+**On your phone** (same Wi-Fi): set `JARVIS_API_KEY` in `backend\.env`, then start with `-Lan` to get the phone URL:
+```powershell
+cd C:\JARVIS\backend
+.\.venv\Scripts\python scripts\set_api_key.py
+powershell -ExecutionPolicy Bypass -File C:\JARVIS\scripts\start_prod.ps1 -Lan
+```
+Open the printed `http://192.168.x.x:8000` on the phone, unlock it with the key, and use the browser menu - **Install app / Add to Home Screen**. See `docs/MOBILE_APP.md`.
+
 **Development mode** - open two PowerShell windows:
 ```powershell
 # window 1 - backend
@@ -131,11 +139,20 @@ JARVIS never sends mail on its own, and sending is blocked unless you explicitly
 - **Tasks & Reminders** shows pending, due today, overdue and completed counts.
 
 ## Voice workflow
+### Voice Agent (recommended on a phone)
+1. Open **Voice Agent** and allow microphone access.
+2. Press **Start talking**. Speak naturally - JARVIS transcribes, routes the request, and answers out loud.
+3. After the answer it listens again, so you can say "show my top matches" and then "what are the gaps in the first one?" as one conversation.
+4. Barge in by speaking while JARVIS is talking, and it stops immediately. Turn on "Only answer when I say JARVIS" to keep it listening without reacting to every word.
+5. Every chat intent works here (jobs, tasks, Gmail, hiring news, study, approvals, resume generation). Actions that change data still ask for approval.
+
+### Push-to-talk voice
 1. Open **Voice Assistant** and allow microphone access.
 2. Hold **Hold to talk**, speak, release.
-3. The clip is transcribed locally, routed, and the answer is spoken back.
+3. The clip is transcribed locally (Whisper on your CPU), routed, and the answer is spoken back.
 4. The microphone is only live while you hold the button. The red badge shows when it is active.
-5. Speech never bypasses approvals.
+
+Speech never bypasses approvals.
 
 ## Developer assistant
 Paste code or give a path, then **Analyze** (static checks: functions, imports, syntax errors, dangerous calls) or **Explain with AI** (a beginner-friendly walkthrough). The **Project snapshot** card summarises the backend.

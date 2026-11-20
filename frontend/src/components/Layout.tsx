@@ -1,29 +1,38 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { api, type SystemStatus, type Proposal } from '../services/api'
-import { LayoutDashboard, Bot, Search, Briefcase, FileUser, FolderKanban, CalendarClock, Workflow, BarChart3, Settings, Bell, Mic, Cpu, HardDrive, ShieldCheck, Menu, X, FileText, Mail, Wand2, Radio } from 'lucide-react'
+import { useAppDispatch, useAppSelector } from '../store/hooks'
+import { LayoutDashboard, Bot, Search, Briefcase, FileUser, FolderKanban, CalendarClock, Workflow, BarChart3, Settings, Bell, Mic, Cpu, HardDrive, ShieldCheck, Menu, X, FileText, Mail, Wand2, Radio, Download, Smartphone } from 'lucide-react'
+
+let installPrompt: any = null
 
 const nav = [
-  { to: '/', label: 'Command Center', icon: LayoutDashboard, end: true },
-  { to: '/assistant', label: 'AI Assistant', icon: Bot },
-  { to: '/voice', label: 'Voice Agent', icon: Radio },
-  { to: '/jobs', label: 'Job Discovery', icon: Search },
-  { to: '/matched', label: 'Matched Jobs', icon: Briefcase },
-  { to: '/resume', label: 'Resume Intelligence', icon: FileUser },
-  { to: '/resume-generator', label: 'Resume Generator', icon: Wand2 },
-  { to: '/emails', label: 'Email Access', icon: Mail },
-  { to: '/documents', label: 'Document Studio', icon: FileText },
-  { to: '/applications', label: 'Application Manager', icon: FolderKanban },
-  { to: '/interviews', label: 'Interview Tracker', icon: CalendarClock },
-  { to: '/automation', label: 'Automation Center', icon: Workflow },
-  { to: '/analytics', label: 'Analytics', icon: BarChart3 },
-  { to: '/settings', label: 'Settings', icon: Settings },
+  { to: '/', label: 'Command Center', short: 'Home', icon: LayoutDashboard, end: true },
+  { to: '/assistant', label: 'AI Assistant', short: 'Ask', icon: Bot },
+  { to: '/voice', label: 'Voice Agent', short: 'Voice', icon: Radio },
+  { to: '/jobs', label: 'Job Discovery', short: 'Discover', icon: Search },
+  { to: '/matched', label: 'Matched Jobs', short: 'Matches', icon: Briefcase },
+  { to: '/resume', label: 'Resume Intelligence', short: 'Resume', icon: FileUser },
+  { to: '/resume-generator', label: 'Resume Generator', short: 'Generate', icon: Wand2 },
+  { to: '/emails', label: 'Email Access', short: 'Mail', icon: Mail },
+  { to: '/documents', label: 'Document Studio', short: 'Docs', icon: FileText },
+  { to: '/applications', label: 'Application Manager', short: 'Apps', icon: FolderKanban },
+  { to: '/interviews', label: 'Interview Tracker', short: 'Interviews', icon: CalendarClock },
+  { to: '/automation', label: 'Automation Center', short: 'Automation', icon: Workflow },
+  { to: '/analytics', label: 'Analytics', short: 'Stats', icon: BarChart3 },
+  { to: '/settings', label: 'Settings', short: 'Settings', icon: Settings },
 ]
 
+const bottomNav = nav.filter(item => ['/', '/assistant', '/voice', '/matched', '/resume-generator'].includes(item.to))
+
 export default function Layout() {
-  const [status, setStatus] = useState<SystemStatus | null>(null)
-  const [pending, setPending] = useState(0)
-  const [open, setOpen] = useState(false)
+  const dispatch = useAppDispatch()
+  const status = useAppSelector((s) => s.app.status) as SystemStatus | null
+  const pending = useAppSelector((s) => s.app.pending)
+  const installAvailable = useAppSelector((s) => s.ui.installAvailable)
+  const installed = useAppSelector((s) => s.ui.installed)
+  const open = useAppSelector((s) => s.ui.sidebarOpen)
+  const setOpen = (value: boolean) => dispatch({ type: 'ui/sidebar', payload: value })
   const [q, setQ] = useState('')
   const navigate = useNavigate()
   const location = useLocation()
@@ -31,18 +40,61 @@ export default function Layout() {
   useEffect(() => {
     let alive = true
     const load = async () => {
-      try { const s = await api.get<SystemStatus>('/system/status'); if (alive) setStatus(s) } catch {}
+      try {
+        const s = await api.get<SystemStatus>('/system/status')
+        if (alive) dispatch({ type: 'app/status', payload: s })
+      } catch { }
       try {
         const a = await api.get<{ pending?: number; actions?: Proposal[] }>('/actions?status=pending')
-        if (alive) setPending(a?.pending ?? (a?.actions?.length ?? 0))
-      } catch {}
+        if (alive) dispatch({ type: 'app/pending', payload: a?.pending ?? (a?.actions?.length ?? 0) })
+      } catch { }
     }
     load()
     const t = setInterval(load, 12000)
     return () => { alive = false; clearInterval(t) }
-  }, [location.pathname])
+  }, [dispatch, location.pathname])
+
+  useEffect(() => {
+    const onInstallPrompt = (event: any) => {
+      event.preventDefault()
+      installPrompt = event
+      dispatch({ type: 'ui/installAvailable', payload: true })
+    }
+    const onInstalled = () => { installPrompt = null; dispatch({ type: 'ui/installed', payload: true }) }
+    window.addEventListener('beforeinstallprompt', onInstallPrompt)
+    window.addEventListener('appinstalled', onInstalled)
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      dispatch({ type: 'ui/installed', payload: true })
+    }
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onInstallPrompt)
+      window.removeEventListener('appinstalled', onInstalled)
+    }
+  }, [dispatch])
 
   const ollamaOk = !!status?.ollama?.ok
+
+  async function installApp() {
+    if (installPrompt) {
+      installPrompt.prompt()
+      const choice = await installPrompt.userChoice
+      if (choice?.outcome === 'accepted') dispatch({ type: 'ui/installed', payload: true })
+      installPrompt = null
+      dispatch({ type: 'ui/installAvailable', payload: false })
+      return
+    }
+    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent)
+    dispatch({
+      type: 'ui/toast',
+      payload: {
+        id: Date.now(),
+        kind: 'info',
+        text: ios
+          ? 'On iPhone: tap the Share button, then "Add to Home Screen".'
+          : 'Open your browser menu and choose "Install app" / "Add to Home screen".',
+      },
+    })
+  }
 
   function onSearch(e: React.FormEvent) {
     e.preventDefault()
@@ -52,7 +104,7 @@ export default function Layout() {
   }
 
   return (
-    <div className="min-h-screen text-[var(--text)]">
+    <div className="min-h-screen text-[var(--text)] pb-16 lg:pb-0">
       <div className="flex min-h-screen">
         <aside className={`fixed lg:static inset-y-0 left-0 z-40 w-72 transform transition-transform duration-200 ${open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
           <div className="h-full glass-strong border-r border-[var(--border-soft)] flex flex-col">
@@ -64,7 +116,7 @@ export default function Layout() {
                   {ollamaOk ? 'Systems Online' : 'Limited Mode'}
                 </div>
               </div>
-              <button className="lg:hidden text-[var(--muted)]" onClick={() => setOpen(false)}><X size={18}/></button>
+              <button className="lg:hidden text-[var(--muted)]" onClick={() => setOpen(false)} aria-label="Close menu"><X size={18}/></button>
             </div>
             <nav className="flex-1 overflow-y-auto p-3 space-y-1">
               {nav.map((item) => {
@@ -85,10 +137,12 @@ export default function Layout() {
           </div>
         </aside>
 
+        {open && <div className="lg:hidden fixed inset-0 z-30 bg-black/60" onClick={() => setOpen(false)} />}
+
         <div className="flex-1 min-w-0 flex flex-col">
-          <header className="sticky top-0 z-30 glass border-b border-[var(--border-soft)]">
-            <div className="px-4 lg:px-6 py-3 flex items-center gap-3">
-              <button className="lg:hidden text-[var(--muted)]" onClick={() => setOpen(true)}><Menu size={18}/></button>
+          <header className="sticky top-0 z-20 glass border-b border-[var(--border-soft)]" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+            <div className="px-3 sm:px-4 lg:px-6 py-3 flex items-center gap-2 sm:gap-3">
+              <button className="lg:hidden text-[var(--muted)] p-1" onClick={() => setOpen(true)} aria-label="Open menu"><Menu size={20}/></button>
               <form onSubmit={onSearch} className="flex-1 max-w-xl">
                 <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search or command JARVIS..." className="w-full px-3 py-2 rounded-lg text-sm bg-black/20" />
               </form>
@@ -97,17 +151,45 @@ export default function Layout() {
                 <div className="flex items-center gap-1.5"><HardDrive size={14}/><span className={status && status.ram_percent>85?'text-amber-300':''}>{status ? `${Math.round(status.ram_percent)}%` : '--'}</span></div>
                 <div className={`flex items-center gap-1.5 ${ollamaOk?'text-emerald-300':'text-amber-300'}`}><Bot size={14}/><span>{ollamaOk ? 'AI Ready' : 'AI Offline'}</span></div>
               </div>
+              {installAvailable && !installed && (
+                <button onClick={installApp} className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-cyan-400/30 bg-cyan-500/10 text-cyan-200 text-xs">
+                  <Download size={14}/><span>Install</span>
+                </button>
+              )}
               <button onClick={() => navigate('/applications')} className="relative p-2 rounded-lg hover:bg-white/5 text-[var(--muted)]" title="Pending approvals">
                 <Bell size={16}/>
                 {pending > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-amber-400 text-black text-[10px] flex items-center justify-center font-semibold">{pending}</span>}
               </button>
-              <button onClick={() => navigate('/assistant')} className="p-2 rounded-lg hover:bg-white/5 text-cyan-300" title="Voice assistant"><Mic size={16}/></button>
+              <button onClick={() => navigate('/voice')} className="p-2 rounded-lg hover:bg-white/5 text-cyan-300" title="Voice agent"><Mic size={16}/></button>
               <button onClick={() => navigate('/settings')} className="hidden sm:flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 text-xs text-[var(--muted)]"><ShieldCheck size={14}/><span>Profile</span></button>
             </div>
           </header>
-          <main className="flex-1 p-4 lg:p-6"><Outlet context={{ status, pending }} /></main>
+          <main className="flex-1 p-3 sm:p-4 lg:p-6"><Outlet context={{ status, pending }} /></main>
         </div>
       </div>
+
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 glass-strong border-t border-[var(--border-soft)]" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <div className="grid grid-cols-5">
+          {bottomNav.map((item) => {
+            const Icon = item.icon
+            return (
+              <NavLink key={item.to} to={item.to} end={item.end}
+                className={({ isActive }) => `flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] ${isActive ? 'text-cyan-300' : 'text-[var(--muted)]'}`}>
+                <Icon size={19}/>
+                <span>{item.short}</span>
+              </NavLink>
+            )
+          })}
+        </div>
+      </nav>
+
+      {!installed && (
+        <button onClick={installApp}
+          className="sm:hidden fixed right-3 z-30 flex items-center gap-1.5 rounded-full border border-cyan-400/40 bg-[#0b1b2e]/90 px-3 py-2 text-[11px] text-cyan-200 shadow-lg"
+          style={{ bottom: 'calc(4.5rem + env(safe-area-inset-bottom))' }}>
+          <Smartphone size={14}/><span>Install app</span>
+        </button>
+      )}
     </div>
   )
 }

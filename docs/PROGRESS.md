@@ -89,6 +89,16 @@ Live check (2026-11-09): "Find Python backend jobs in India" → `jobs` (2.3 s),
 - Switch back to the stronger model when you have more RAM: set `OLLAMA_MODEL=qwen3:4b` in `backend/.env`.
 - Endpoint `POST /system/unload-model` frees RAM immediately.
 
+## Phase 12 — Voice Agent, Redux, mobile app (2026-11-20)
+- **Voice Agent** (`/voice`): continuous conversation through the browser speech engine — orb states (idle/listening/thinking/speaking), auto re-listen after each answer, barge-in, optional wake word, follow-up handling ("and my overdue ones?"), and spoken output cleaned of markdown and URLs. Backend: `POST /voice/agent` + `GET /voice/agent/help` in `app/agents/voice/service.py`, routed through the same orchestrator as the chat.
+- **Redux Toolkit** added: slices for app state, UI, resume details and voice; typed hooks; the voice conversation and the resume form now survive navigation and restarts (`localStorage`).
+- **Installable PWA**: `public/manifest.webmanifest`, `public/sw.js` (app shell cached, API never cached), generated PNG icons (`frontend/scripts/generate_icons.py`), install button in the layout, apple-touch-icon and theme colour.
+- **Mobile UX**: bottom navigation bar, drawer menu, safe-area insets, touch-sized controls, responsive padding across pages.
+- **LAN mode**: `start_prod.ps1 -Lan` binds 0.0.0.0 and prints the phone URL. Every API call then needs `JARVIS_API_KEY`; the phone shows an unlock screen and keeps the key on the device. `scripts/set_api_key.py` sets it without echoing it.
+- **Fixes**: `ResumeSection` was missing from `app/api/resumes.py` imports (500 on `GET /resumes/{id}/details`); `JARVIS_API_KEY` is now read from `.env`; `/system/auth` reports LAN mode.
+- Verified: 153/153 pytest pass, oxlint 0 errors / 0 warnings, production build clean, 28 API endpoints + 10 static routes return 200, voice agent answers through NVIDIA NIM in ~1.4 s.
+- Docs: `docs/MOBILE_APP.md` added, `docs/VOICE.md` updated.
+
 ## Still pending (user action)
 - **Gmail OAuth consent** — the only thing left, deferred by the user to the end:
   ```powershell
@@ -97,6 +107,9 @@ Live check (2026-11-09): "Find Python backend jobs in India" → `jobs` (2.3 s),
   ```
   Needs `C:\JARVIS\credentials\credentials.json` (Google Cloud → OAuth 2.0 Desktop client → download JSON).
   Add `--send` for the `gmail.send` scope required to actually send an approved email.
+- **Rotate the NVIDIA key** — the key currently in `backend\.env` was pasted into a chat, so treat it as exposed. Generate a fresh one at https://build.nvidia.com → API Keys, install it with `scripts\set_nvidia_key.py`, then delete the old key in the catalog.
+- **Upload the real resume** — the stored resume is a 29-character stub, so job matching and the resume generator only see `python, django, fastapi, api, sql`. Upload the real PDF on Resume Intelligence, then fill the **My details** form on the Resume Generator page.
+- **Set the job-search preferences** — target roles, locations, salary and seniority in Settings, so discovery and matching use them.
 - **n8n runtime** — n8n 2.46.7 OOM-crashes on this 8 GB host. The workflows are installed and JARVIS falls back to native execution after approval. Run n8n on a machine with more RAM (or via Docker) for true webhook execution.
 - **Deliberate deviations** (documented, working alternatives in place): SQLite instead of PostgreSQL/pgvector + Alembic, deterministic router instead of LangGraph, local single-user mode instead of JWT/multi-user auth, no Redis/Celery, no permitted form-fill assistance (by design — JARVIS never submits applications for you).
 - Everything else in the plan is implemented, tested and documented.
