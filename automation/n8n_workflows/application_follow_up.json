@@ -1,0 +1,70 @@
+{
+  "name": "JARVIS - Application Follow-up",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "jarvis/application-follow-up",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "671e5b26-510c-47db-b55b-7b8c5103075d",
+      "name": "Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "jarvis-application_follow_up"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://127.0.0.1:8000/applications",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "26d48226-0434-49a7-a47e-6b63a708a6ac",
+      "name": "Call JARVIS API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Trigger": {
+      "main": [
+        [
+          {
+            "node": "Call JARVIS API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "meta": {
+    "description": "List applications that may need a follow-up. Drafts only, never auto-sent."
+  },
+  "tags": []
+}

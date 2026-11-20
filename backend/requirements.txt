@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+pydantic
+python-dotenv
+httpx
+sqlalchemy
+aiosqlite
+psutil
+pytest
+pytest-asyncio
+pydantic-settings
+pypdf
+python-multipart
+google-api-python-client
+google-auth
+google-auth-oauthlib
+google-auth-httplib2

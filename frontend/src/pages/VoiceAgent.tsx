@@ -1,0 +1,274 @@
+import { useEffect, useRef, useState } from 'react'
+import { api } from '../services/api'
+import { Mic, MicOff, Volume2, Square, Send, Sparkles, Radio } from 'lucide-react'
+
+type Turn = { id: number; user: string; assistant: string; intent?: string; needsApproval?: boolean }
+
+const ORB_STATES: Record<string, string> = {
+  idle: 'Ready when you are',
+  listening: 'Listening...',
+  thinking: 'Thinking...',
+  speaking: 'Speaking...',
+}
+
+export default function VoiceAgent() {
+  const [state, setState] = useState<'idle'|'listening'|'thinking'|'speaking'>('idle')
+  const [continuous, setContinuous] = useState(true)
+  const [wakeWord, setWakeWord] = useState(false)
+  const [turns, setTurns] = useState<Turn[]>([])
+  const [interim, setInterim] = useState('')
+  const [textInput, setTextInput] = useState('')
+  const [error, setError] = useState<string|null>(null)
+  const [voiceURI, setVoiceURI] = useState<string|null>(null)
+
+  const recognitionRef = useRef<any>(null)
+  const speakingRef = useRef(false)
+  const shouldListenRef = useRef(false)
+  const continuousRef = useRef(true)
+  const turnId = useRef(0)
+
+  useEffect(() => { continuousRef.current = continuous }, [continuous])
+
+  useEffect(() => {
+    const loadVoices = () => {
+      const voices = window.speechSynthesis?.getVoices?.() || []
+      const english = voices.find(v => /en-GB/i.test(v.lang)) || voices.find(v => /^en/i.test(v.lang))
+      if (english) setVoiceURI(english.voiceURI)
+    }
+    loadVoices()
+    window.speechSynthesis?.addEventListener?.('voiceschanged', loadVoices)
+    return () => {
+      window.speechSynthesis?.removeEventListener?.('voiceschanged', loadVoices)
+      window.speechSynthesis?.cancel()
+    }
+  }, [])
+
+  function speak(text: string): Promise<void> {
+    return new Promise(resolve => {
+      const synth = window.speechSynthesis
+      if (!synth || !text) { resolve(); return }
+      synth.cancel()
+      const utter = new SpeechSynthesisUtterance(text)
+      utter.rate = 1.03
+      utter.pitch = 1.0
+      if (voiceURI) utter.voice = window.speechSynthesis.getVoices().find(v => v.voiceURI === voiceURI) || null
+      speakingRef.current = true
+      setState('speaking')
+      const done = () => {
+        speakingRef.current = false
+        setState('idle')
+        if (shouldListenRef.current && continuousRef.current) {
+          try { recognitionRef.current?.start() } catch { /* already running */ }
+        }
+        resolve()
+      }
+      utter.onend = done
+      utter.onerror = done
+      synth.speak(utter)
+    })
+  }
+
+  function stopSpeaking() {
+    window.speechSynthesis?.cancel()
+    speakingRef.current = false
+    setState('idle')
+  }
+
+  async function ask(text: string) {
+    const clean = text.trim()
+    if (!clean) return
+    setError(null)
+    setState('thinking')
+    const id = ++turnId.current
+    setTurns(prev => [...prev, { id, user: clean, assistant: '' }])
+    try {
+      const history = turns.slice(-5).map(t => ({ user: t.user, assistant: t.assistant }))
+      const res = await api.post<any>('/voice/agent', { message: clean, history })
+      const reply = res?.spoken || res?.reply || res?.error || ''
+      setTurns(prev => prev.map(t => t.id === id
+        ? { ...t, assistant: reply, intent: res?.intent, needsApproval: !!res?.requires_approval }
+        : t))
+      if (res?.error && !res?.reply) setError(res.error)
+      await speak(reply)
+    } catch (e:any) {
+      setError(e?.message || 'Voice agent failed')
+      setState('idle')
+    }
+  }
+
+  function startRecognition() {
+    const SR: any = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SR) { setError('This browser has no speech recognition. Use Chrome or Edge, or type instead.'); return false }
+    const rec = new SR()
+    rec.continuous = true
+    rec.interimResults = true
+    rec.lang = 'en-US'
+    rec.onresult = (event: any) => {
+      let finalText = ''
+      let interimText = ''
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript
+        if (event.results[i].isFinal) finalText += transcript
+        else interimText += transcript
+      }
+      setInterim(interimText)
+      if (interimText && speakingRef.current) {
+        window.speechSynthesis?.cancel()
+        speakingRef.current = false
+        setState('listening')
+      }
+      if (finalText.trim()) {
+        setInterim('')
+        if (wakeWord) {
+          const lower = finalText.toLowerCase()
+          if (!lower.includes('jarvis')) return
+          const stripped = lower.replace(/^.*?jarvis\s*/, '')
+          ask(stripped || finalText)
+          return
+        }
+        ask(finalText)
+      }
+    }
+    rec.onerror = (e: any) => {
+      if (e?.error === 'not-allowed') setError('Microphone permission denied. Allow it in your browser and try again.')
+      if (e?.error === 'no-speech' || e?.error === 'aborted') return
+      setError(`Speech recognition error: ${e?.error}`)
+    }
+    rec.onend = () => {
+      if (shouldListenRef.current && continuousRef.current && !speakingRef.current) {
+        try { rec.start() } catch { /* already running */ }
+      }
+    }
+    rec.start()
+    recognitionRef.current = rec
+    setState('listening')
+    return true
+  }
+
+  function stopRecognition() {
+    shouldListenRef.current = false
+    try { recognitionRef.current?.stop() } catch { }
+    recognitionRef.current = null
+    setState('idle')
+    setInterim('')
+  }
+
+  function toggleListening() {
+    if (state === 'listening') {
+      stopRecognition()
+      return
+    }
+    stopSpeaking()
+    setError(null)
+    shouldListenRef.current = true
+    const started = startRecognition()
+    if (!started) shouldListenRef.current = false
+  }
+
+  useEffect(() => {
+    return () => {
+      shouldListenRef.current = false
+      try { recognitionRef.current?.stop() } catch { }
+      window.speechSynthesis?.cancel()
+    }
+  }, [])
+
+  async function sendText() {
+    const text = textInput.trim()
+    if (!text) return
+    setTextInput('')
+    await ask(text)
+  }
+
+  const orbColor =
+    state === 'listening' ? 'from-red-500/60 to-rose-500/30 border-red-400/60'
+    : state === 'thinking' ? 'from-amber-400/50 to-orange-500/20 border-amber-300/60'
+    : state === 'speaking' ? 'from-cyan-400/60 to-sky-500/20 border-cyan-300/60'
+    : 'from-cyan-500/30 to-blue-600/10 border-cyan-400/30'
+
+  return (
+    <div className="space-y-4">
+      <div className="glass-strong rounded-2xl p-5">
+        <div className="flex items-center gap-2 text-cyan-100"><Radio size={18}/><h1 className="text-lg font-semibold">Voice Agent</h1></div>
+        <p className="text-sm text-[var(--muted)] mt-1">Talk to JARVIS like a person. Speak, it answers out loud, then it listens again - so you stay in one conversation instead of pressing buttons.</p>
+        <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-[var(--muted)]">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={continuous} onChange={e=>setContinuous(e.target.checked)} />
+            <span>Keep the conversation going</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={wakeWord} onChange={e=>setWakeWord(e.target.checked)} />
+            <span>Only answer when I say “JARVIS”</span>
+          </label>
+        </div>
+        {error && <div className="mt-3 text-sm text-red-300">{error}</div>}
+      </div>
+
+      <div className="glass rounded-2xl p-6 flex flex-col items-center gap-4">
+        <div className={`relative h-40 w-40 rounded-full bg-gradient-to-br ${orbColor} border-4 flex items-center justify-center transition-all ${state === 'listening' ? 'animate-pulse' : ''}`}>
+          <div className="text-center px-4">
+            <div className="text-[11px] uppercase tracking-widest text-white/70">{state}</div>
+            <div className="text-xs text-white/80 mt-1">{ORB_STATES[state]}</div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <button onClick={toggleListening}
+            className={`px-5 py-3 rounded-full border text-sm inline-flex items-center gap-2 ${state === 'listening' ? 'border-red-400/50 bg-red-500/15 text-red-200' : 'border-cyan-400/40 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20'}`}>
+            {state === 'listening' ? <MicOff size={16}/> : <Mic size={16}/>}
+            {state === 'listening' ? 'Stop listening' : 'Start talking'}
+          </button>
+          <button onClick={stopSpeaking} className="px-4 py-3 rounded-full border border-[var(--border-soft)] text-[var(--muted)] hover:text-cyan-200 inline-flex items-center gap-2"><Square size={14}/> Stop speaking</button>
+          <button onClick={()=>speak(turns[turns.length-1]?.assistant || '')} disabled={!turns.length} className="px-4 py-3 rounded-full border border-[var(--border-soft)] text-[var(--muted)] hover:text-cyan-200 inline-flex items-center gap-2"><Volume2 size={14}/> Repeat</button>
+        </div>
+
+        {interim && <div className="text-sm text-slate-400 italic">“{interim}”</div>}
+        {state === 'listening' && continuous && <div className="text-xs text-[var(--muted)]">Listening - JARVIS will answer automatically, then listen again.</div>}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="glass rounded-2xl p-4">
+          <div className="text-sm text-cyan-200 mb-3">Conversation</div>
+          <div className="space-y-3 max-h-[26rem] overflow-auto">
+            {turns.length === 0 && <div className="text-sm text-[var(--muted)]">Say something like “Find Python backend jobs in India” or “Show my pending tasks”.</div>}
+            {turns.map(t => (
+              <div key={t.id} className="space-y-1">
+                <div className="text-xs text-cyan-300">You: {t.user}</div>
+                <div className="text-sm text-slate-200 bg-black/20 rounded p-2 border border-[var(--border-soft)]">
+                  {t.assistant || <span className="text-[var(--muted)]">thinking...</span>}
+                  {t.needsApproval && <div className="mt-1 text-[11px] text-amber-300">Waiting for your approval in the Approvals panel.</div>}
+                  {t.intent && <div className="mt-1 text-[10px] text-[var(--muted)]">intent: {t.intent}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="glass rounded-2xl p-4">
+            <div className="text-sm text-cyan-200 mb-2">Type instead</div>
+            <div className="flex gap-2">
+              <input value={textInput} onChange={e=>setTextInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') sendText() }}
+                placeholder="Ask JARVIS anything..."
+                className="flex-1 px-3 py-2 rounded-lg text-sm bg-black/20 border border-[var(--border-soft)]" />
+              <button onClick={sendText} className="px-3 py-2 rounded-lg border border-cyan-400/30 text-cyan-200 inline-flex items-center gap-1"><Send size={14}/></button>
+            </div>
+          </div>
+          <div className="glass rounded-2xl p-4">
+            <div className="text-sm text-cyan-200 mb-2 inline-flex items-center gap-1.5"><Sparkles size={13}/> Try saying</div>
+            <ul className="text-xs text-[var(--muted)] space-y-1">
+              <li>“Find Python backend developer jobs in India”</li>
+              <li>“Show my pending tasks”</li>
+              <li>“Show today's hiring news”</li>
+              <li>“What are my top job matches”</li>
+              <li>“Read my latest recruiter email”</li>
+              <li>“Show pending approvals”</li>
+            </ul>
+            <div className="text-[11px] text-[var(--muted)] mt-3">Voice never bypasses approvals - sending an email, preparing an application or generating a document still needs your click.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

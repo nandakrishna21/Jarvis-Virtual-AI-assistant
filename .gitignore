@@ -1,0 +1,22 @@
+.env
+credentials.json
+token.json
+*.sqlite
+*.db
+resumes/
+logs/
+backups/
+__pycache__/
+.venv/
+
+# runtime / generated data
+data/
+.pytest_cache/
+.cache/
+.n8n/
+node_modules/
+dist/
+*.pyc
+*.pyo
+*.log
+.DS_Store

@@ -1,0 +1,70 @@
+{
+  "name": "JARVIS - Interview Reminders",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "jarvis/interview-reminders",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "e38a0ae7-fdd3-44db-af87-9a742bf3dad8",
+      "name": "Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "jarvis-interview_reminders"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://127.0.0.1:8000/interviews",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "13400881-11d6-44f7-bbf4-779b7a511009",
+      "name": "Call JARVIS API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Trigger": {
+      "main": [
+        [
+          {
+            "node": "Call JARVIS API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "meta": {
+    "description": "Upcoming interviews and reminder status."
+  },
+  "tags": []
+}
