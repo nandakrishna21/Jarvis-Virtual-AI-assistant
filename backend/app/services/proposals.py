@@ -33,6 +33,21 @@ def hash_payload(payload: dict) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
 
 
+def find_pending(db: Session, action_type: str, payload_match: dict | None = None) -> ActionProposal | None:
+    rows = db.query(ActionProposal).filter(ActionProposal.status == "pending", ActionProposal.action_type == action_type).order_by(ActionProposal.id.desc()).all()
+    if not payload_match:
+        return rows[0] if rows else None
+    for r in rows:
+        p = {}
+        try:
+            p = json.loads(r.payload or "{}")
+        except Exception:
+            p = {}
+        if all(p.get(k) == v for k, v in payload_match.items()):
+            return r
+    return None
+
+
 def create_proposal(
     db: Session,
     action_type: str,
@@ -41,8 +56,13 @@ def create_proposal(
     plan: list[str] | None = None,
     payload: dict | None = None,
     source: str = "chat",
+    dedupe: bool = False,
 ) -> dict:
     payload = payload or {}
+    if dedupe:
+        existing = find_pending(db, action_type, payload)
+        if existing:
+            return {"ok": True, "deduped": True, "proposal": to_dict(existing)}
     row = ActionProposal(
         action_type=action_type,
         title=title,

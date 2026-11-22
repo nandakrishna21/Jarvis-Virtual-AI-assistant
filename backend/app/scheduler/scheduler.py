@@ -50,6 +50,7 @@ def _create_schedule_proposal(db, s: Schedule) -> bool:
         ],
         payload={"schedule_id": s.id, "job_type": s.job_type, "schedule_name": s.name, "time_of_day": s.time_of_day},
         source="scheduler",
+        dedupe=True,
     )
     _state["last_proposed"] = datetime.now().isoformat(timespec="minutes")
     _state["proposals_created"] += 1

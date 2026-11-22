@@ -154,13 +154,23 @@ async def create_interview(payload: dict, db: Session) -> dict:
 async def fetch_jobs(payload: dict, db: Session) -> dict:
     from app.agents.job_discovery.service import search_and_save
     from app.database.models import ResumeProfile
+    from app.services import profile as profile_service
 
-    rp = db.query(ResumeProfile).order_by(ResumeProfile.id.desc()).first()
-    skills = rp.extracted_skills.split(",") if rp and rp.extracted_skills else []
-    query = payload.get("query", "Python Backend Developer")
-    location = payload.get("location", "India")
-    jobs = await search_and_save(query, location, skills)
-    return {"ok": True, "message": f"Found {len(jobs)} job(s) for '{query}' in {location}.", "jobs": jobs}
+    rp = db.query(ResumeProfile).filter(ResumeProfile.is_active.is_(True)).order_by(ResumeProfile.id.desc()).first()
+    if not rp:
+        rp = db.query(ResumeProfile).order_by(ResumeProfile.id.desc()).first()
+    skills = [s.strip() for s in (rp.extracted_skills or '').split(',') if s.strip()] if rp else []
+    prefs = profile_service.get_preferences(db)
+    query = payload.get("query") or (prefs.get("target_roles") or ["Python Backend Developer"])[0]
+    location = payload.get("location") or (prefs.get("locations") or ["India"])[0]
+    jobs = await search_and_save(query, location, skills, prefs=prefs)
+    top = [j for j in jobs if (j.get("score") or 0) >= 60][:5]
+    return {
+        "ok": True,
+        "message": f"Found {len(jobs)} job(s) for '{query}' in {location}; {len(top)} strong match(es).",
+        "jobs": jobs[:10],
+        "top_matches": top,
+    }
 
 
 @proposals.handler("fetch_news")
@@ -179,11 +189,18 @@ async def fetch_emails(payload: dict, db: Session) -> dict:
         emails = gmail_service.fetch_and_store(int(payload.get("max_results", 25)))
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": str(exc)}
-    recruiter = [e for e in emails if e.get("category") in ("recruiter", "interview", "assessment")]
+    important = [e for e in emails if e.get("category") in ("recruiter", "interview", "assessment", "job_alert")]
+    drafts = []
+    for e in important[:3]:
+        # Draft only; never send. Creates a pending approval for each draft send.
+        d = gmail_service.create_draft(e.get("id"))
+        if d and not d.get("error"):
+            drafts.append({"email_id": e.get("id"), "draft_id": d.get("draft_id"), "approval_id": d.get("approval_id"), "subject": d.get("subject")})
     return {
         "ok": True,
-        "message": f"Fetched {len(emails)} emails, {len(recruiter)} recruiter/interview.",
+        "message": f"Fetched {len(emails)} emails, {len(important)} important; created {len(drafts)} draft approval(s). No emails sent.",
         "emails": emails[:20],
+        "draft_approvals": drafts,
     }
 
 
