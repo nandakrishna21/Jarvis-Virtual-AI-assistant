@@ -34,15 +34,26 @@ def status() -> dict:
     }
 
 
-def enable() -> dict:
+def enable(lan: bool = True) -> dict:
+    """Create the Windows startup entry.
+
+    Defaults to LAN mode so JARVIS is reachable from your phone or another
+    device on your Wi-Fi / Tailscale. Set lan=False for localhost-only.
+    """
     script = JARVIS_ROOT / "scripts" / "start_prod.ps1"
     if not script.exists():
         return {"error": f"start script not found at {script}"}
     STARTUP_DIR.mkdir(parents=True, exist_ok=True)
-    content = CMD_TEMPLATE.format(root=JARVIS_ROOT)
+    lan_flag = " -Lan" if lan else ""
+    content = f"""@echo off
+title JARVIS
+powershell -NoProfile -ExecutionPolicy Bypass -File "{JARVIS_ROOT}\\scripts\\start_prod.ps1"{lan_flag}
+exit /b 0
+"""
     entry_path().write_text(content, encoding="utf-8")
-    return {"enabled": True, "path": str(entry_path()),
-            "note": "JARVIS will start when you log in to Windows."}
+    return {"enabled": True, "path": str(entry_path()), "lan": lan,
+            "note": "JARVIS will start when you log in to Windows."
+            + (" (LAN/Tailscale reachable)" if lan else " (localhost only)")}
 
 
 def disable() -> dict:

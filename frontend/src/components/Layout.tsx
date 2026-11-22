@@ -2,7 +2,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { api, type SystemStatus, type Proposal } from '../services/api'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
-import { LayoutDashboard, Bot, Search, Briefcase, FileUser, FolderKanban, CalendarClock, Workflow, BarChart3, Settings, Bell, Mic, Cpu, HardDrive, ShieldCheck, Menu, X, FileText, Mail, Wand2, Radio, Download, Smartphone } from 'lucide-react'
+import { LayoutDashboard, Bot, Search, Briefcase, FileUser, FolderKanban, CalendarClock, Workflow, BarChart3, Settings, Bell, Mic, Cpu, HardDrive, ShieldCheck, Menu, X, FileText, Mail, Wand2, Radio, Download, Smartphone, Moon, Sun } from 'lucide-react'
 
 let installPrompt: any = null
 
@@ -34,6 +34,7 @@ export default function Layout() {
   const open = useAppSelector((s) => s.ui.sidebarOpen)
   const setOpen = (value: boolean) => dispatch({ type: 'ui/sidebar', payload: value })
   const [q, setQ] = useState('')
+  const [resting, setResting] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -47,6 +48,10 @@ export default function Layout() {
       try {
         const a = await api.get<{ pending?: number; actions?: Proposal[] }>('/actions?status=pending')
         if (alive) dispatch({ type: 'app/pending', payload: a?.pending ?? (a?.actions?.length ?? 0) })
+      } catch { }
+      try {
+        const p = await api.get<any>('/system/power')
+        if (alive) setResting(!!p?.resting)
       } catch { }
     }
     load()
@@ -94,6 +99,13 @@ export default function Layout() {
           : 'Open your browser menu and choose "Install app" / "Add to Home screen".',
       },
     })
+  }
+
+  async function toggleRest() {
+    try {
+      const r = await api.post<any>(resting ? '/system/power/wake' : '/system/power/rest')
+      setResting(!!r?.resting)
+    } catch { }
   }
 
   function onSearch(e: React.FormEvent) {
@@ -156,6 +168,9 @@ export default function Layout() {
                   <Download size={14}/><span>Install</span>
                 </button>
               )}
+              <button onClick={toggleRest} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs ${resting ? 'bg-indigo-500/20 border-indigo-400/40 text-indigo-200' : 'bg-emerald-500/10 border-emerald-400/30 text-emerald-200'}`} title={resting ? 'Wake JARVIS' : 'Rest mode - pause automations'}>
+                {resting ? <Moon size={14}/> : <Sun size={14}/>}<span className="hidden sm:inline">{resting ? 'Resting' : 'Active'}</span>
+              </button>
               <button onClick={() => navigate('/applications')} className="relative p-2 rounded-lg hover:bg-white/5 text-[var(--muted)]" title="Pending approvals">
                 <Bell size={16}/>
                 {pending > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-amber-400 text-black text-[10px] flex items-center justify-center font-semibold">{pending}</span>}

@@ -515,8 +515,11 @@ def test_auth_status_endpoint():
 
 def test_auth_guard_blocks_mutations_when_key_set():
     original = auth_service.settings.api_key
+    original_prefixed = getattr(auth_service.settings, "jarvis_api_key", "")
     try:
         auth_service.settings.api_key = "p11-secret"
+        if hasattr(auth_service.settings, "jarvis_api_key"):
+            auth_service.settings.jarvis_api_key = ""
         blocked = client.post("/tasks", json={"title": "should be blocked"})
         assert blocked.status_code == 401
         assert "api key required" in blocked.json()["error"]
@@ -530,26 +533,41 @@ def test_auth_guard_blocks_mutations_when_key_set():
         assert wrong.status_code == 401
     finally:
         auth_service.settings.api_key = original
+        if hasattr(auth_service.settings, "jarvis_api_key"):
+            auth_service.settings.jarvis_api_key = original_prefixed
 
 
 def test_auth_guard_leaves_reads_open():
+    """Direct read endpoints stay open, but /api reads require the key (tunnel safety)."""
     original = auth_service.settings.api_key
+    original_prefixed = getattr(auth_service.settings, "jarvis_api_key", "")
     try:
         auth_service.settings.api_key = "p11-secret"
+        if hasattr(auth_service.settings, "jarvis_api_key"):
+            auth_service.settings.jarvis_api_key = ""
         assert client.get("/health").status_code == 200
         assert client.get("/jobs").status_code == 200
+        assert client.get("/api/jobs").status_code == 401
+        assert client.get("/api/jobs", headers={"X-API-Key": "p11-secret"}).status_code == 200
     finally:
         auth_service.settings.api_key = original
+        if hasattr(auth_service.settings, "jarvis_api_key"):
+            auth_service.settings.jarvis_api_key = original_prefixed
 
 
 def test_auth_check_is_tolerant_of_empty_config():
     original = auth_service.settings.api_key
+    original_prefixed = getattr(auth_service.settings, "jarvis_api_key", "")
     try:
         auth_service.settings.api_key = ""
+        if hasattr(auth_service.settings, "jarvis_api_key"):
+            auth_service.settings.jarvis_api_key = ""
         assert auth_service.check(None) is True
         assert auth_service.enabled() is False
     finally:
         auth_service.settings.api_key = original
+        if hasattr(auth_service.settings, "jarvis_api_key"):
+            auth_service.settings.jarvis_api_key = original_prefixed
 
 
 # ---------- router coverage for the new intents ----------

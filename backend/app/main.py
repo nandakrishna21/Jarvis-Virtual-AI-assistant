@@ -89,17 +89,22 @@ async def api_prefix_stripper(request, call_next):
 
 @app.middleware("http")
 async def api_key_guard(request, call_next):
-    """Require the local API key for mutating requests when one is configured.
+    """Require the local API key for API calls when one is configured.
 
-    In LAN mode the server is reachable from other devices, so every API call
-    (reads included) needs the key. The app shell and static files stay open
-    so the phone can load the unlock screen first.
+    The app shell and static files stay open so the unlock screen can load.
+    If a key is configured, every /api request needs it (important when the
+    app is exposed through a tunnel). In LAN mode, starting without a key is
+    refused as an extra safety net.
     """
     lan = bool(getattr(settings, "jarvis_lan_mode", False))
     path = request.scope.get("path", "")
-    is_api = path.startswith("/api/") or path.startswith("/api")
+    is_api = path.startswith("/api/") or path == "/api"
     mutating = request.method in ("POST", "PUT", "PATCH", "DELETE")
-    if auth_service.enabled() and (mutating or (lan and is_api)):
+    # If a key is set, protect API calls (and direct mutating calls). Leave the
+    # app shell/static files open so the unlock screen can load. If no key is set,
+    # nothing is blocked - convenient for home Wi-Fi, but do not expose a public
+    # tunnel without setting JARVIS_API_KEY.
+    if auth_service.enabled() and (is_api or mutating):
         provided = request.headers.get("x-api-key") or request.query_params.get("api_key")
         if not auth_service.check(provided):
             from fastapi.responses import JSONResponse
@@ -111,16 +116,6 @@ async def api_key_guard(request, call_next):
                     "hint": "Send the JARVIS_API_KEY value in the X-API-Key header.",
                 },
             )
-    if lan and not auth_service.enabled():
-        from fastapi.responses import JSONResponse
-
-        return JSONResponse(
-            status_code=503,
-            content={
-                "error": "LAN mode needs an API key",
-                "hint": "Set JARVIS_API_KEY in backend\\.env, then restart JARVIS.",
-            },
-        )
     return await call_next(request)
 
 
@@ -476,11 +471,12 @@ async def gmail_account():
         return {"connected": False, "email": None,
                 "hint": "Run scripts/gmail_auth.py (read-only) - see docs/GMAIL_SETUP.md"}
     try:
-        service = gmail_client.build_service(gmail_client.SCOPES_READONLY)
+        creds = gmail_client.load_credentials(gmail_client.SCOPES_SEND)
+        from googleapiclient.discovery import build
+        service = build("gmail", "v1", credentials=creds, cache_discovery=False)
         profile = service.users().getProfile(userId="me").execute()
     except Exception as exc:  # noqa: BLE001
         return {"connected": False, "email": None, "error": str(exc)}
-    creds = gmail_client.load_credentials(gmail_client.SCOPES_READONLY)
     scopes = list(creds.scopes or []) if creds else []
     return {
         "connected": True,

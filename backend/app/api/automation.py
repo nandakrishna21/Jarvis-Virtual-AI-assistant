@@ -1,4 +1,4 @@
-"""Automation Center API backed by n8n."""
+﻿"""Automation Center API backed by n8n."""
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -71,3 +71,30 @@ async def automation_pause():
 @router.post("/automation/resume")
 async def automation_resume():
     return scheduler.resume()
+
+
+@router.post("/automation/rest")
+async def automation_rest():
+    """Rest mode: JARVIS stops scheduled/background automation until woken."""
+    return scheduler.rest()
+
+
+@router.post("/automation/wake")
+async def automation_wake():
+    """Wake JARVIS from rest mode."""
+    return scheduler.wake()
+
+
+@router.get("/system/power")
+async def system_power():
+    return scheduler.status()
+
+
+@router.post("/system/power/rest")
+async def system_power_rest():
+    return scheduler.rest()
+
+
+@router.post("/system/power/wake")
+async def system_power_wake():
+    return scheduler.wake()

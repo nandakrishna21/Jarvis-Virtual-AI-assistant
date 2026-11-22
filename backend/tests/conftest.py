@@ -20,3 +20,4 @@ for suffix in ("", "-wal", "-shm"):
 
 os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB.as_posix()}"
 os.environ["LLM_PROVIDER"] = "ollama"
+os.environ["JARVIS_API_KEY"] = ""

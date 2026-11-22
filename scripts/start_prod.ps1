@@ -71,7 +71,12 @@ if ($Lan) {
     } else {
         Write-Host "Could not detect a LAN address. Check your Wi-Fi connection."
     }
-    Write-Host "LAN mode requires JARVIS_API_KEY in backend\.env (every API call asks for it)."
+    $ts = Get-Command tailscale -ErrorAction SilentlyContinue
+    if ($ts) {
+        try { $tsIp = (& tailscale ip -4 2>$null | Select-Object -First 1).Trim() } catch { $tsIp = "" }
+        if ($tsIp) { Write-Host "Tailscale URL (other systems, same Tailscale account): http://${tsIp}:$Port" }
+    }
+    Write-Host "Tip: set JARVIS_API_KEY in backend\.env if you expose JARVIS outside your trusted network."
     $env:JARVIS_LAN_MODE = "true"
 }
 
