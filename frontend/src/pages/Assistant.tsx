@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { api, type ChatResponse, type Proposal } from '../services/api'
 import ApprovalCard from '../components/jarvis/ApprovalCard'
-import { Send, Mic, Bot, User } from 'lucide-react'
+import { Send, Mic, Bot, User, Minus, Maximize2, Minimize2 } from 'lucide-react'
 
 type Msg = { role: 'user' | 'assistant'; text: string; proposal?: Proposal; intent?: string }
 
@@ -14,6 +14,8 @@ export default function Assistant() {
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [listening, setListening] = useState(false)
+  const [minimized, setMinimized] = useState(false)
+  const [maximized, setMaximized] = useState(false)
   const recRef = useRef<any>(null)
   const endRef = useRef<HTMLDivElement | null>(null)
 
@@ -53,14 +55,19 @@ export default function Assistant() {
   }
 
   return (
-    <div className="h-[calc(100vh-140px)] flex flex-col glass-strong rounded-2xl overflow-hidden">
-      <div className="px-4 py-3 border-b border-[var(--border-soft)] flex items-center justify-between">
-        <div>
+    <div className={`${maximized ? 'fixed inset-4 z-[80]' : 'h-[calc(100vh-140px)]'} ${minimized ? 'h-auto' : ''} flex flex-col glass-strong rounded-2xl overflow-hidden transition-all duration-200`}>
+      <div className="px-4 py-3 border-b border-[var(--border-soft)] flex items-center justify-between gap-3">
+        <div className="min-w-0">
           <div className="text-sm font-medium text-cyan-100">AI Assistant</div>
-          <div className="text-xs text-[var(--muted)]">Chat-first control. Approval required before actions.</div>
+          {!minimized && <div className="text-xs text-[var(--muted)]">Chat-first control. Approval required before actions.</div>}
         </div>
-        <div className="text-xs text-[var(--muted)]">Local mode</div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <div className="text-xs text-[var(--muted)] mr-2 hidden sm:block">Local mode</div>
+          <button onClick={() => setMinimized(v => !v)} className="p-1.5 rounded-md hover:bg-white/10 text-[var(--muted)] hover:text-cyan-200" title={minimized ? 'Restore' : 'Minimize'} aria-label={minimized ? 'Restore assistant' : 'Minimize assistant'}><Minus size={15}/></button>
+          <button onClick={() => { setMaximized(v => !v); setMinimized(false) }} className="p-1.5 rounded-md hover:bg-white/10 text-[var(--muted)] hover:text-cyan-200" title={maximized ? 'Restore size' : 'Maximize'} aria-label={maximized ? 'Restore assistant size' : 'Maximize assistant'}>{maximized ? <Minimize2 size={15}/> : <Maximize2 size={15}/>}</button>
+        </div>
       </div>
+      {!minimized && <>
       <div className="flex-1 overflow-auto p-4 space-y-4">
         {messages.map((m, i) => (
           <div key={i} className={`flex gap-3 ${m.role==='user'?'justify-end':'justify-start'}`}>
@@ -83,6 +90,7 @@ export default function Assistant() {
           <button onClick={() => send()} disabled={busy} className="px-4 rounded-lg bg-cyan-500/20 border border-cyan-400/30 text-cyan-100 hover:bg-cyan-500/30 disabled:opacity-50 flex items-center gap-2 text-sm"><Send size={15}/> Send</button>
         </div>
       </div>
+      </>}
     </div>
   )
 }

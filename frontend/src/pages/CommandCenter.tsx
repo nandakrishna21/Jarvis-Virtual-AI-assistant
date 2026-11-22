@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { api, type Greeting, type ChatResponse, type Proposal } from '../services/api'
 import Orb, { type OrbState } from '../components/jarvis/Orb'
 import ApprovalCard from '../components/jarvis/ApprovalCard'
-import { Send, Mic, Activity, Sparkles, ShieldAlert, Bell, Briefcase, Mail, ListTodo, Cpu, RefreshCw, ChevronRight, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { Send, Mic, Activity, Sparkles, ShieldAlert, Bell, Briefcase, Mail, ListTodo, Cpu, RefreshCw, ChevronRight, CheckCircle2, AlertTriangle, Moon, Sun } from 'lucide-react'
 
 type Msg = { role: 'user' | 'assistant'; text: string; proposal?: Proposal }
 
@@ -29,11 +29,13 @@ export default function CommandCenter() {
   const [listening, setListening] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [resting, setResting] = useState(false)
+  const [powerBusy, setPowerBusy] = useState(false)
   const recognitionRef = useRef<any>(null)
   const navigate = useNavigate()
 
   const refresh = useCallback(async () => {
-    const [g, p, n, a, j, gm, t, s] = await Promise.allSettled([
+    const [g, p, n, a, j, gm, t, s, pw] = await Promise.allSettled([
       api.get<Greeting>('/assistant/greeting'),
       api.get<any>('/actions?status=pending'),
       api.get<any>('/notifications?limit=8'),
@@ -42,10 +44,13 @@ export default function CommandCenter() {
       api.get<any>('/gmail/account'),
       api.get<any>('/productivity'),
       api.get<any>('/system/status'),
+      api.get<any>('/system/power'),
     ])
     const val = <T,>(r: PromiseSettledResult<T>, fallback: T): T => r.status === 'fulfilled' ? r.value : fallback
     const greeting = val(g, null)
     const pendingRes = val(p, { actions: [] })
+    const power = val(pw, null) as any
+    if (power && typeof power.resting === 'boolean') setResting(!!power.resting)
     setB({
       greeting,
       pending: (pendingRes?.actions || []).filter((x: Proposal) => x.status === 'pending'),
@@ -82,6 +87,16 @@ export default function CommandCenter() {
       setMessages((m) => [...m, { role: 'assistant', text: msg2 }])
       setState('error'); setTimeout(() => setState('idle'), 2000)
     } finally { setBusy(false) }
+  }
+
+  async function togglePower() {
+    setPowerBusy(true)
+    try {
+      const r = await api.post<any>(resting ? '/system/power/wake' : '/system/power/rest')
+      setResting(!!r?.resting)
+    } catch (e: any) {
+      setError(e?.message || 'Failed to toggle JARVIS power mode.')
+    } finally { setPowerBusy(false) }
   }
 
   function toggleMic() {
@@ -128,7 +143,12 @@ export default function CommandCenter() {
                 <div className="text-xs uppercase tracking-[0.2em] text-cyan-300/80">Mission Briefing</div>
                 <h1 className="text-xl sm:text-2xl font-semibold mt-1 glow-text">{b.greeting?.greeting || 'JARVIS Command Center'}</h1>
               </div>
-              <button onClick={refresh} className="p-2 rounded-lg border border-[var(--border-soft)] text-[var(--muted)] hover:text-cyan-200" title="Refresh"><RefreshCw size={15}/></button>
+              <div className="flex items-center gap-2">
+                <button onClick={togglePower} disabled={powerBusy} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition ${resting ? 'bg-indigo-500/20 border-indigo-400/40 text-indigo-200' : 'bg-emerald-500/15 border-emerald-400/35 text-emerald-200 hover:bg-emerald-500/25'}`} title={resting ? 'Wake JARVIS' : 'Put JARVIS in rest mode'}>
+                  {resting ? <Moon size={14}/> : <Sun size={14}/>}<span>{powerBusy ? '...' : resting ? 'OFF' : 'ON'}</span>
+                </button>
+                <button onClick={refresh} className="p-2 rounded-lg border border-[var(--border-soft)] text-[var(--muted)] hover:text-cyan-200" title="Refresh"><RefreshCw size={15}/></button>
+              </div>
             </div>
             <p className="text-sm text-slate-300/85 mt-2">{loading ? 'Loading systems...' : briefing}</p>
             {error && <div className="mt-2 text-xs text-red-300 flex items-center gap-1.5"><AlertTriangle size={13}/>{error}</div>}
