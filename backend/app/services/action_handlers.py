@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Executable action handlers.
 
 Each handler is the *only* code path that performs a mutating or external
@@ -6,14 +8,16 @@ after the user approves the matching proposal.
 """
 import logging
 
+from datetime import datetime
+
 from sqlalchemy.orm import Session
 
-from app.services.proposals import handler
+from app.services import proposals
 
 logger = logging.getLogger("jarvis.actions")
 
 
-@handler("create_task")
+@proposals.handler("create_task")
 async def create_task(payload: dict, db: Session) -> dict:
     from app.agents.task_manager import service as task_service
 
@@ -34,7 +38,7 @@ async def create_task(payload: dict, db: Session) -> dict:
     return {"ok": True, "message": f"Task created: {title}", **result}
 
 
-@handler("complete_task")
+@proposals.handler("complete_task")
 async def complete_task(payload: dict, db: Session) -> dict:
     from app.agents.task_manager import service as task_service
 
@@ -45,7 +49,7 @@ async def complete_task(payload: dict, db: Session) -> dict:
     return {"ok": True, "message": f"Task {task_id} marked completed", **result}
 
 
-@handler("delete_task")
+@proposals.handler("delete_task")
 async def delete_task(payload: dict, db: Session) -> dict:
     from app.agents.task_manager import service as task_service
 
@@ -56,7 +60,7 @@ async def delete_task(payload: dict, db: Session) -> dict:
     return {"ok": True, "message": f"Task {task_id} deleted", **result}
 
 
-@handler("prepare_application")
+@proposals.handler("prepare_application")
 async def prepare_application(payload: dict, db: Session) -> dict:
     from app.agents.job_application import service as app_service
 
@@ -71,7 +75,7 @@ async def prepare_application(payload: dict, db: Session) -> dict:
     }
 
 
-@handler("prepare_email_reply")
+@proposals.handler("prepare_email_reply")
 async def prepare_email_reply(payload: dict, db: Session) -> dict:
     from app.agents.gmail import service as gmail_service
 
@@ -86,7 +90,7 @@ async def prepare_email_reply(payload: dict, db: Session) -> dict:
     }
 
 
-@handler("send_email")
+@proposals.handler("send_email")
 async def send_email(payload: dict, db: Session) -> dict:
     from app.agents.gmail import service as gmail_service
 
@@ -97,7 +101,7 @@ async def send_email(payload: dict, db: Session) -> dict:
     return {"ok": True, "message": "Email sent.", **result}
 
 
-@handler("run_workflow")
+@proposals.handler("run_workflow")
 async def run_workflow(payload: dict, db: Session) -> dict:
     from app.agents.automation import service as automation_service
 
@@ -110,7 +114,7 @@ async def run_workflow(payload: dict, db: Session) -> dict:
     }
 
 
-@handler("create_schedule")
+@proposals.handler("create_schedule")
 async def create_schedule(payload: dict, db: Session) -> dict:
     from app.agents.task_manager import service as task_service
 
@@ -125,7 +129,7 @@ async def create_schedule(payload: dict, db: Session) -> dict:
     return {"ok": True, "message": f"Schedule '{name}' saved.", **result}
 
 
-@handler("create_interview")
+@proposals.handler("create_interview")
 async def create_interview(payload: dict, db: Session) -> dict:
     from app.agents.interview import service as interview_service
 
@@ -146,7 +150,7 @@ async def create_interview(payload: dict, db: Session) -> dict:
     return {"ok": True, "message": f"Interview scheduled with {company}.", **result}
 
 
-@handler("fetch_jobs")
+@proposals.handler("fetch_jobs")
 async def fetch_jobs(payload: dict, db: Session) -> dict:
     from app.agents.job_discovery.service import search_and_save
     from app.database.models import ResumeProfile
@@ -159,7 +163,7 @@ async def fetch_jobs(payload: dict, db: Session) -> dict:
     return {"ok": True, "message": f"Found {len(jobs)} job(s) for '{query}' in {location}.", "jobs": jobs}
 
 
-@handler("fetch_news")
+@proposals.handler("fetch_news")
 async def fetch_news(payload: dict, db: Session) -> dict:
     from app.agents.hiring_news import service as news_service
 
@@ -167,7 +171,7 @@ async def fetch_news(payload: dict, db: Session) -> dict:
     return {"ok": True, "message": f"Hiring news updated ({result.get('inserted', 0)} new).", **result}
 
 
-@handler("fetch_emails")
+@proposals.handler("fetch_emails")
 async def fetch_emails(payload: dict, db: Session) -> dict:
     from app.agents.gmail import service as gmail_service
 
@@ -183,7 +187,7 @@ async def fetch_emails(payload: dict, db: Session) -> dict:
     }
 
 
-@handler("generate_documents")
+@proposals.handler("generate_documents")
 async def generate_documents(payload: dict, db: Session) -> dict:
     from app.services import documents
 
@@ -212,7 +216,7 @@ async def generate_documents(payload: dict, db: Session) -> dict:
     }
 
 
-@handler("generate_resume_from_jd")
+@proposals.handler("generate_resume_from_jd")
 async def generate_resume_from_jd(payload: dict, db: Session) -> dict:
     """Build a targeted resume from a pasted job description."""
     from app.services import documents, resume_generator
@@ -265,7 +269,7 @@ async def generate_resume_from_jd(payload: dict, db: Session) -> dict:
     }
 
 
-@handler("update_resume_sections")
+@proposals.handler("update_resume_sections")
 async def update_resume_sections(payload: dict, db: Session) -> dict:
     from app.services import documents
 
@@ -289,3 +293,29 @@ async def update_resume_sections(payload: dict, db: Session) -> dict:
         else:
             saved.append(documents.add_section(db, int(resume_id), item))
     return {"ok": True, "message": f"Saved {len(saved)} resume section(s).", "sections": saved}
+
+@proposals.handler("run_schedule_job")
+async def run_schedule_job(payload: dict, db: Session) -> dict:
+    """Execute an approved scheduled job. Scheduler never runs jobs without approval."""
+    from app.scheduler import scheduler
+
+    schedule_id = payload.get("schedule_id")
+    job_type = payload.get("job_type")
+    row = db.get(Schedule, int(schedule_id)) if schedule_id else None
+    if not row and job_type:
+        row = db.query(Schedule).filter(Schedule.job_type == job_type).first()
+    if not row:
+        return {"ok": False, "error": f"Schedule not found: {schedule_id or job_type}"}
+
+    before = scheduler.status().get("last_run")
+    await scheduler._run_schedule(row)  # explicit user-approved execution
+    after = scheduler.status().get("last_run")
+    return {
+        "ok": True,
+        "message": f"Executed scheduled job '{row.job_type}' after approval.",
+        "schedule_id": row.id,
+        "job_type": row.job_type,
+        "last_run_before": before,
+        "last_run_after": after,
+        "executed_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+    }

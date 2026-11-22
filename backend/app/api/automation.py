@@ -58,6 +58,26 @@ async def automation_start():
     return scheduler.start()
 
 
+@router.post("/automation/run-now/{job_type}")
+async def run_now(job_type: str):
+    from app.database.session import SessionLocal
+    from app.services import proposals
+    db = SessionLocal()
+    try:
+        proposal = proposals.create_proposal(
+            db,
+            action_type="run_schedule_job",
+            title=f"Run scheduled job now: {job_type}",
+            reason="Manual run requested; approval required before execution.",
+            plan=[f"Review {job_type}", "Approve to execute now", "Reject to skip"],
+            payload={"job_type": job_type},
+            source="automation_api",
+        )
+        return {"ok": True, "requires_approval": True, "proposal": proposal}
+    finally:
+        db.close()
+
+
 @router.post("/automation/stop")
 async def automation_stop():
     return scheduler.stop()
