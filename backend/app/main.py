@@ -51,6 +51,7 @@ from app.api import notifications as notifications_api
 from app.api import profile as profile_api
 from app.api import resumes as resumes_api
 from app.api import resume_generator as resume_generator_api
+from app.api import weather as weather_api
 
 logger = get_logger("jarvis.api")
 
@@ -129,6 +130,7 @@ app.include_router(notifications_api.router)
 app.include_router(profile_api.router)
 app.include_router(resumes_api.router)
 app.include_router(resume_generator_api.router)
+app.include_router(weather_api.router)
 
 class ChatRequest(BaseModel):
     message: str

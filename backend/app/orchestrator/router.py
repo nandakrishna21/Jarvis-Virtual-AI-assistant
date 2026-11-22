@@ -88,6 +88,10 @@ def detect_intent(message: str) -> str:
         return "task_action"
     if _is_application_action(low):
         return "application"
+    if _is_open_site(low):
+        return "open_site"
+    if _is_weather(low):
+        return "weather"
     for name, keys in INTENTS:
         if any(k in low for k in keys):
             return name
@@ -96,6 +100,39 @@ def detect_intent(message: str) -> str:
     if _is_job_search(low):
         return "jobs"
     return "chat"
+
+
+OPEN_VERBS = ["open", "launch", "browse", "go to", "goto", "play", "take me to", "navigate to", "visit", "search on", "search youtube"]
+WEATHER_KEYS = ["weather", "temperature", "forecast", "humidity", "how hot", "is it raining", "rain today", "wind speed"]
+
+
+def _is_open_site(low: str) -> bool:
+    from app.services import sites
+
+    if not any(v in low for v in OPEN_VERBS):
+        return False
+    return sites.extract(low) is not None
+
+
+def _is_weather(low: str) -> bool:
+    return any(k in low for k in WEATHER_KEYS)
+
+
+def _extract_city(message: str) -> str:
+    low = message.lower()
+    patterns = [
+        r"weather\s+(?:in|at|for)\s+([a-z0-9\s,]+)",
+        r"(?:temperature|forecast)\s+(?:in|at|for)\s+([a-z0-9\s,]+)",
+    ]
+    for p in patterns:
+        m = re.search(p, low)
+        if m:
+            city = m.group(1).strip(" .?!,")
+            for stop in ["today", "now", "tomorrow", "please", "right now", "currently"]:
+                city = re.sub(rf"\b{stop}\b", "", city).strip(" .?!,")
+            if city:
+                return city.title()
+    return "Hyderabad"
 
 
 def _is_job_search(low: str) -> bool:
@@ -194,6 +231,47 @@ def _extract_application_id(message: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def _handle_open_site(message: str) -> dict:
+    """Return a link for the user to click. JARVIS never navigates on its own."""
+    from app.services import sites
+
+    target = sites.extract(message)
+    if not target:
+        return {
+            "ok": False,
+            "intent": "open_site",
+            "error": "I did not recognise that site. Try: open YouTube, open Google, open LinkedIn.",
+        }
+    label = target["site"].title()
+    query = f" for '{target['query']}'" if target.get("query") else ""
+    return {
+        "ok": True,
+        "intent": "open_site",
+        "response": f"Ready to open {label}{query}. Click the button below to open it - I will not open anything without your click.",
+        "open_url": target["url"],
+        "open_label": f"Open {label}",
+        "requires_click": True,
+    }
+
+
+async def _handle_weather(message: str) -> dict:
+    from app.services import weather as weather_service
+
+    city = _extract_city(message)
+    try:
+        data = await weather_service.current(city)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "intent": "weather", "error": f"Weather lookup failed: {exc}"}
+    if not data.get("ok"):
+        return {"ok": False, "intent": "weather", "error": data.get("error", "Weather unavailable.")}
+    return {
+        "ok": True,
+        "intent": "weather",
+        "response": weather_service.summarize(data),
+        "weather": data,
+    }
+
+
 async def handle(message: str, db=None) -> dict:
     intent = detect_intent(message)
     try:
@@ -201,6 +279,10 @@ async def handle(message: str, db=None) -> dict:
             return await _handle_task_action(message, db)
         if intent == "application":
             return await _handle_application_action(message, db)
+        if intent == "open_site":
+            return _handle_open_site(message)
+        if intent == "weather":
+            return await _handle_weather(message)
         if intent == "automation":
             return await _handle_automation_action(message, db)
         if intent == "interview":

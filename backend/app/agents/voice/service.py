@@ -250,6 +250,10 @@ async def agent_reply(message: str, history: list[dict] | None = None) -> dict:
         spoken = (spoken + " " if spoken else "") + (
             "This action needs your approval. Open the approvals panel to confirm it."
         )
+    if result.get("open_url"):
+        spoken = (spoken + " " if spoken else "") + (
+            f"Tap the open button in the chat to open {result.get('open_label') or 'the link'}."
+        )
     _convo_push(text, spoken or reply, result.get("intent") or "")
     return {
         "ok": bool(result.get("ok", True)),
@@ -258,6 +262,9 @@ async def agent_reply(message: str, history: list[dict] | None = None) -> dict:
         "spoken": spoken,
         "requires_approval": bool(result.get("requires_approval")),
         "proposal": result.get("proposal"),
+        "open_url": result.get("open_url"),
+        "open_label": result.get("open_label"),
+        "weather": result.get("weather"),
         "provider": result.get("provider"),
         "model": result.get("model"),
         "elapsed": result.get("elapsed"),

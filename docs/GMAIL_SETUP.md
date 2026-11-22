@@ -47,3 +47,32 @@ curl -X POST http://127.0.0.1:8000/emails/approve-send?approval_id=1
 
 ## Verify
 `GET /gmail/status` should show `credentials_present: true` and `token_present: true`, and `GET /emails` should list fetched messages.
+
+## Rotating the OAuth client secret (recommended after any leak)
+
+Rotating does **not** delete your Gmail data or the OAuth consent screen. You only replace the client secret, then re-run the local browser consent once.
+
+1. Google Cloud Console → your project → **APIs & Services → Credentials**.
+2. Click your **Desktop app** OAuth client → **Download JSON** (or "Reset client secret", then download).
+3. Replace `C:\JARVIS\credentials\credentials.json` with the new file. Keep the filename exactly `credentials.json`.
+4. Re-consent (browser window opens, you approve the Gmail scopes):
+   ```powershell
+   cd C:\JARVIS\backend
+   .\.venv\Scripts\python scripts\gmail_auth.py --send
+   ```
+5. Restart JARVIS and confirm:
+   ```powershell
+   cd C:\JARVIS
+   .\scripts\stop_prod.ps1
+   .\scripts\start_prod.ps1
+   Invoke-RestMethod http://127.0.0.1:8000/gmail/account
+   ```
+   Expected: `connected: True`, `can_send: True`.
+
+Keep the same client if you like — it keeps working until you reset it. Never commit `credentials.json` or `token.json`; both are ignored by Git.
+
+## Gmail autopilot behaviour
+- Inbox scans are proposals (`fetch_emails`). Approve the proposal before JARVIS fetches.
+- Draft replies are created with a pending send approval. Nothing is ever sent without your explicit approval of that exact message.
+- A changed draft is refused by design (`draft changed since approval request`).
+

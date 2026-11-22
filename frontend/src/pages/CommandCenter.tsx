@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { api, type Greeting, type ChatResponse, type Proposal } from '../services/api'
 import Orb, { type OrbState } from '../components/jarvis/Orb'
 import ApprovalCard from '../components/jarvis/ApprovalCard'
-import { Send, Mic, Activity, Sparkles, ShieldAlert, Bell, Briefcase, Mail, ListTodo, Cpu, RefreshCw, ChevronRight, CheckCircle2, AlertTriangle, Moon, Sun } from 'lucide-react'
+import { Send, Mic, Activity, Sparkles, ShieldAlert, Bell, Briefcase, Mail, ListTodo, Cpu, RefreshCw, ChevronRight, CheckCircle2, AlertTriangle, Moon, Sun, ExternalLink, CloudSun } from 'lucide-react'
 
-type Msg = { role: 'user' | 'assistant'; text: string; proposal?: Proposal }
+type Msg = { role: 'user' | 'assistant'; text: string; proposal?: Proposal; openUrl?: string; openLabel?: string; weather?: any }
 
 type Briefing = {
   greeting: Greeting | null
@@ -77,7 +77,7 @@ export default function CommandCenter() {
       setState('executing')
       const res = await api.post<ChatResponse>('/assistant/chat', { message: msg })
       const reply = res?.response || res?.error || 'No response.'
-      setMessages((m) => [...m, { role: 'assistant', text: reply, proposal: res?.proposal }])
+      setMessages((m) => [...m, { role: 'assistant', text: reply, proposal: res?.proposal, openUrl: res?.open_url, openLabel: res?.open_label, weather: res?.weather }])
       setState(res?.ok === false ? 'error' : 'success')
       await refresh()
       setTimeout(() => setState('idle'), 1500)
@@ -195,6 +195,18 @@ export default function CommandCenter() {
                 <div key={i} className={`flex ${m.role==='user'?'justify-end':'justify-start'}`}>
                   <div className={`max-w-[88%] rounded-xl px-3 py-2 text-sm ${m.role==='user'?'bg-cyan-500/15 border border-cyan-400/25 text-cyan-50':'bg-white/5 border border-[var(--border-soft)] text-slate-200'}`}>
                     <div className="whitespace-pre-wrap leading-relaxed">{m.text}</div>
+                    {m.weather?.current && (
+                      <div className="mt-2 rounded-lg border border-sky-400/25 bg-sky-500/10 p-2.5">
+                        <div className="flex items-center gap-1.5 text-[11px] text-sky-200 mb-0.5"><CloudSun size={12}/> Weather · {m.weather.location?.name}{m.weather.location?.country ? `, ${m.weather.location.country}` : ''}</div>
+                        <div className="text-sm font-semibold text-sky-100">{m.weather.current.temperature}°C · {m.weather.current.condition}</div>
+                        <div className="text-[10px] text-[var(--muted)]">Feels like {m.weather.current.apparent_temperature}°C · Humidity {m.weather.current.humidity}%</div>
+                      </div>
+                    )}
+                    {m.openUrl && (
+                      <button onClick={() => window.open(m.openUrl, '_blank', 'noopener,noreferrer')} className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-cyan-500/15 text-cyan-200 border border-cyan-400/30 hover:bg-cyan-500/25">
+                        <ExternalLink size={12}/>{m.openLabel || 'Open link'}
+                      </button>
+                    )}
                     {m.proposal && <ApprovalCard proposal={m.proposal} onResolved={refresh} />}
                   </div>
                 </div>
