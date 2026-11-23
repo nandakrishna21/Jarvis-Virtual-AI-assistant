@@ -42,6 +42,7 @@ from app.agents.job_discovery import feedback as job_feedback_service
 from app.agents.job_discovery.service import search_and_save
 from app.agents.job_discovery import feedback as job_feedback_service
 from app.agents.job_discovery.service import rescore_stored, save_ranked_jobs
+from app.agents.job_discovery import quality as job_quality
 from app.utils.logging_setup import get_logger
 import json
 from app.api import actions as actions_api
@@ -405,27 +406,124 @@ def top_matches(db: Session = Depends(get_db)):
     return out
 
 @app.get("/jobs/matched")
-async def jobs_matched(min_score: float = 0, limit: int = 50, db: Session = Depends(get_db)):
-    rows = db.query(JobMatch).filter(JobMatch.score >= min_score).order_by(JobMatch.score.desc()).limit(min(limit, 100)).all()
-    out = []
-    for m in rows:
-        j = db.get(Job, m.job_id)
-        if j:
-            app_row = db.query(Application).filter(Application.job_id == j.id).order_by(Application.id.desc()).first()
-            out.append({
-                "job_id": j.id, "title": j.title, "company": j.company, "url": j.url,
-                "location": j.location, "score": m.score, "matching": m.matching_skills,
-                "missing": m.missing_skills, "source": j.source, "seniority": j.seniority,
-                "salary": j.salary, "feedback": j.feedback,
-                "status": app_row.status if app_row else None,
-                "components": json.loads(m.components) if m.components else {},
-                "notes": json.loads(m.notes) if m.notes else {},
-            })
-    return out
+async def jobs_matched(
+    min_score: float = 0,
+    limit: int = 50,
+    offset: int = 0,
+    q: str = "",
+    source: str = "",
+    sort: str = "score",
+    remote_only: bool = False,
+    hide_irrelevant: bool = True,
+    db: Session = Depends(get_db),
+):
+    """Professional match board: filtered, searchable, paginated and scored."""
+    from app.services import profile as profile_service
+
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+    prefs = profile_service.get_preferences(db)
+    rp = db.query(ResumeProfile).filter(ResumeProfile.is_active.is_(True)).order_by(ResumeProfile.id.desc()).first()
+    if not rp:
+        rp = db.query(ResumeProfile).order_by(ResumeProfile.id.desc()).first()
+    skills = [s.strip() for s in (rp.extracted_skills or "").split(",") if s.strip()] if rp else []
+
+    statuses: dict[int, str] = {}
+    for app_row in db.query(Application).order_by(Application.id.asc()).all():
+        statuses[app_row.job_id] = app_row.status
+
+    rows = db.query(JobMatch).order_by(JobMatch.score.desc()).limit(1000).all()
+    board: list[dict] = []
+    hidden = 0
+    for match in rows:
+        job = db.get(Job, match.job_id)
+        if not job:
+            continue
+        if hide_irrelevant and not job_quality.is_relevant(job, skills, prefs):
+            hidden += 1
+            continue
+        if hide_irrelevant and not job_quality.location_ok(job, prefs):
+            hidden += 1
+            continue
+        components = json.loads(match.components) if match.components else {}
+        notes = json.loads(match.notes) if match.notes else {}
+        board.append({
+            "job_id": job.id,
+            "title": job.title,
+            "company": job.company,
+            "url": job.url,
+            "location": job.location,
+            "job_type": job.job_type,
+            "employment_type": job.employment_type,
+            "score": match.score,
+            "matching": match.matching_skills or "",
+            "missing": match.missing_skills or "",
+            "matching_skills": [s for s in (match.matching_skills or "").split(",") if s],
+            "missing_skills": [s for s in (match.missing_skills or "").split(",") if s],
+            "required_skills": [s for s in (job.required_skills or "").split(",") if s],
+            "tags": [t for t in (job.tags or "").split(",") if t],
+            "description": (job.description or "")[:700],
+            "source": job.source,
+            "seniority": job.seniority,
+            "salary": job.salary,
+            "feedback": job.feedback,
+            "status": statuses.get(job.id),
+            "components": components,
+            "notes": notes,
+            "_newest": job.created_at.isoformat() if job.created_at else "",
+        })
+
+    stats = {
+        "total": len(board),
+        "strong": sum(1 for j in board if (j["score"] or 0) >= 80),
+        "good": sum(1 for j in board if 60 <= (j["score"] or 0) < 80),
+        "applied": sum(1 for j in board if j["status"]),
+        "hidden": hidden,
+    }
+    sources = sorted({j["source"] for j in board if j["source"]})
+
+    filtered = [j for j in board if (j["score"] or 0) >= min_score]
+    needle = q.strip().lower()
+    if needle:
+        filtered = [
+            j for j in filtered
+            if needle in " ".join(
+                str(j.get(key) or "") for key in ("title", "company", "location", "description")
+            ).lower()
+            or needle in " ".join(j.get("tags") or []).lower()
+        ]
+    if source:
+        filtered = [j for j in filtered if j["source"] == source]
+    if remote_only:
+        filtered = [
+            j for j in filtered
+            if j["job_type"] == "remote" or "remote" in (j["location"] or "").lower()
+        ]
+
+    if sort == "company":
+        filtered.sort(key=lambda j: (j["company"] or "~").lower())
+    elif sort == "newest":
+        filtered.sort(key=lambda j: j["_newest"], reverse=True)
+    else:
+        filtered.sort(key=lambda j: j["score"] or 0, reverse=True)
+
+    page = filtered[offset:offset + limit]
+    for job in page:
+        job.pop("_newest", None)
+    return {
+        "jobs": page,
+        "total": len(filtered),
+        "offset": offset,
+        "limit": limit,
+        "stats": stats,
+        "sources": sources,
+    }
+
 
 @app.get("/matching/results")
 async def matching_results(min_score: float = 0, limit: int = 50, db: Session = Depends(get_db)):
-    return await jobs_matched(min_score, limit, db)
+    result = await jobs_matched(min_score=min_score, limit=limit, db=db)
+    return result["jobs"]
 
 @app.post("/jobs/collect")
 async def jobs_collect(req: JobSearch, db: Session = Depends(get_db)):
