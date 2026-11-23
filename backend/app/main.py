@@ -113,6 +113,13 @@ _SPA_PATHS = {
     "/interviews", "/automation", "/analytics", "/settings",
 }
 _api_prefixes: list[tuple[str, str]] = []
+# Built frontend files are public; the HTML shell cannot load without them.
+_STATIC_PREFIXES = ("/assets/", "/static/")
+_STATIC_FILES = {
+    "/sw.js", "/manifest.webmanifest", "/favicon.svg", "/favicon.ico",
+    "/icons.svg", "/apple-touch-icon.png", "/icon-192.png", "/icon-512.png",
+    "/icon-maskable-512.png", "/robots.txt",
+}
 
 
 def _refresh_api_prefixes() -> None:
@@ -125,6 +132,8 @@ def _refresh_api_prefixes() -> None:
             continue
         if path in _PUBLIC_PATHS:
             continue
+        if path in _STATIC_FILES or path.startswith(_STATIC_PREFIXES):
+            continue
         if path.startswith("/{") and "{" in path:
             static = path.split("{")[0].rstrip("/")
             if not static:
@@ -136,6 +145,8 @@ def _refresh_api_prefixes() -> None:
 
 
 def _is_api_path(path: str) -> bool:
+    if path in _STATIC_FILES or path.startswith(_STATIC_PREFIXES):
+        return False
     if path.startswith("/api/") or path == "/api":
         return True
     for exact, prefix in _api_prefixes:
