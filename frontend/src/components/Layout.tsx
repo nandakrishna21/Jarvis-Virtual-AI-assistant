@@ -23,7 +23,7 @@ const nav = [
   { to: '/settings', label: 'Settings', short: 'Settings', icon: Settings },
 ]
 
-const bottomNav = nav.filter(item => ['/', '/assistant', '/voice', '/matched', '/resume-generator'].includes(item.to))
+const bottomNav = nav.filter(item => ['/', '/assistant', '/voice', '/jobs', '/matched'].includes(item.to))
 
 export default function Layout() {
   const dispatch = useAppDispatch()
@@ -35,6 +35,7 @@ export default function Layout() {
   const setOpen = (value: boolean) => dispatch({ type: 'ui/sidebar', payload: value })
   const [q, setQ] = useState('')
   const [resting, setResting] = useState(false)
+  const [allPages, setAllPages] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -211,12 +212,40 @@ export default function Layout() {
               </NavLink>
             )
           })}
-          <button onClick={() => setOpen(true)} className="flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] text-[var(--muted)]" aria-label="Open all pages">
+          <button onClick={() => setAllPages(true)} className="flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] text-[var(--muted)]" aria-label="Open all pages">
             <Menu size={19}/>
             <span>More</span>
           </button>
         </div>
       </nav>
+
+      {allPages && (
+        <div className="lg:hidden fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="All pages">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setAllPages(false)} />
+          <div className="absolute inset-x-0 bottom-0 max-h-[82dvh] overflow-y-auto rounded-t-2xl glass-strong border-t border-cyan-400/25"
+            style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+            <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 border-b border-[var(--border-soft)] bg-[#0b1b2e]/95">
+              <div className="text-sm font-medium text-cyan-100">All pages</div>
+              <button onClick={() => setAllPages(false)} className="p-2 rounded-lg text-[var(--muted)] hover:text-cyan-200" aria-label="Close">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-2 p-3">
+              {nav.map((item) => {
+                const Icon = item.icon
+                const active = location.pathname === item.to || (item.to !== '/' && location.pathname.startsWith(item.to))
+                return (
+                  <button key={item.to} onClick={() => { setAllPages(false); navigate(item.to) }}
+                    className={`flex min-h-[76px] flex-col items-center justify-center gap-1.5 rounded-xl border px-1 py-2 text-center text-[11px] leading-tight transition ${active ? 'border-cyan-400/40 bg-cyan-500/15 text-cyan-100' : 'border-[var(--border-soft)] bg-black/20 text-slate-300 active:bg-white/10'}`}>
+                    <Icon size={20} className="opacity-90" />
+                    <span>{item.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {!installed && (
         <button onClick={installApp}
