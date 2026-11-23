@@ -6,6 +6,7 @@ export type VoiceTurn = {
   needsApproval?: boolean
   openUrl?: string
   openLabel?: string
+  payload?: any
 }
 
 export type VoiceStatus = 'idle' | 'listening' | 'thinking' | 'speaking'
@@ -73,7 +74,7 @@ export default function voiceSlice(state = initialState, action: any): VoiceStat
     }
     case 'voice/turnEnd': {
       const turns = state.turns.map((t) => t.id === action.payload.id
-        ? { ...t, assistant: action.payload.assistant, intent: action.payload.intent, needsApproval: !!action.payload.needsApproval, openUrl: action.payload.openUrl, openLabel: action.payload.openLabel }
+        ? { ...t, assistant: action.payload.assistant, intent: action.payload.intent, needsApproval: !!action.payload.needsApproval, openUrl: action.payload.openUrl, openLabel: action.payload.openLabel, payload: action.payload.payload }
         : t)
       const next = { ...state, turns }
       persist(next)

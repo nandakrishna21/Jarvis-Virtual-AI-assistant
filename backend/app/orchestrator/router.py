@@ -323,14 +323,26 @@ async def handle(message: str, db=None) -> dict:
             return {"ok": True, "intent": intent, "response": "\n".join(lines), "jobs": jobs}
 
         if intent == "tasks":
-            from app.agents.task_manager.service import list_tasks, productivity_report
+            from app.agents.tasks.service import list_tasks, productivity_report
             report = productivity_report()
             tasks = list_tasks(status="pending")
-            lines = [f"Pending: {report['pending']} | due today: {report['due_today']} | overdue: {report['overdue']}"]
-            for t in tasks[:15]:
-                lines.append(f"- {t['title']} ({t['category']}) due {t['due_date'] or 'no date'} {t['due_time'] or ''}"
-                             f"{' [OVERDUE]' if t['overdue'] else ''}")
-            return {"ok": True, "intent": intent, "response": "\n".join(lines), "tasks": tasks, "report": report}
+            pending = report.get("pending", 0)
+            due_today = report.get("due_today", 0)
+            overdue = report.get("overdue", 0)
+            if pending == 0:
+                summary = "You're all clear. No pending tasks right now."
+            else:
+                parts = [f"{pending} pending task{'s' if pending != 1 else ''}"]
+                if due_today: parts.append(f"{due_today} due today")
+                if overdue: parts.append(f"{overdue} overdue")
+                summary = "You have " + ", ".join(parts) + "."
+            lines = [summary]
+            for t in tasks[:8]:
+                due = f" due {t['due_date']}" if t.get("due_date") else ""
+                if t.get("due_time"): due += f" {t['due_time']}"
+                flag = " [OVERDUE]" if t.get("overdue") else ""
+                lines.append(f"- {t['title']} ({t.get('category','task')}){due}{flag}")
+            return {"ok": True, "intent": intent, "response": "\n".join(lines), "tasks": tasks[:15], "report": report}
 
         if intent == "gmail":
             from app.agents.gmail.service import fetch_and_store
