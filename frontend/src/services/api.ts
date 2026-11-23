@@ -51,6 +51,7 @@ export type SystemStatus = {
   ollama: { ok: boolean; models?: string[]; active_model?: string; model_available?: boolean; error?: string }
   llm?: { provider: string; active: string; available: Record<string, boolean>; models: Record<string, string> }
   ai_ok?: boolean
+  demo?: boolean
   model: string
   loaded_models: any[]
 }

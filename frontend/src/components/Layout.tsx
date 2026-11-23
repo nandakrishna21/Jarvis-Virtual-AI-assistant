@@ -190,12 +190,17 @@ export default function Layout() {
               <button onClick={() => navigate('/settings')} className="hidden sm:flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 text-xs text-[var(--muted)]"><ShieldCheck size={14}/><span>Profile</span></button>
             </div>
           </header>
+          {status?.demo && (
+            <div className="border-b border-amber-400/20 bg-amber-500/10 px-3 py-1.5 text-[11px] text-amber-200">
+              Public demo: chat, voice and read-only pages are enabled. Email, files, uploads and automations are disabled.
+            </div>
+          )}
           <main className="flex-1 p-3 sm:p-4 lg:p-6"><Outlet context={{ status, pending }} /></main>
         </div>
       </div>
 
       <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 glass-strong border-t border-[var(--border-soft)]" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-        <div className="grid grid-cols-5">
+        <div className="grid grid-cols-6">
           {bottomNav.map((item) => {
             const Icon = item.icon
             return (
@@ -206,6 +211,10 @@ export default function Layout() {
               </NavLink>
             )
           })}
+          <button onClick={() => setOpen(true)} className="flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] text-[var(--muted)]" aria-label="Open all pages">
+            <Menu size={19}/>
+            <span>More</span>
+          </button>
         </div>
       </nav>
 

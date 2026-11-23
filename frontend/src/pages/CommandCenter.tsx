@@ -42,7 +42,7 @@ export default function CommandCenter() {
       api.get<any>('/assistant/history?limit=10'),
       api.get<any>('/jobs/top-matches'),
       api.get<any>('/gmail/account'),
-      api.get<any>('/productivity'),
+      api.get<any>('/tasks/productivity'),
       api.get<any>('/system/status'),
       api.get<any>('/system/power'),
     ])

@@ -283,6 +283,7 @@ async def status():
             "cpu_percent": cpu,
             "ram_percent": vm.percent,
             "ram_free_gb": round(vm.available / 1024**3, 2),
+            "demo": demo_service.enabled(),
             "ollama": oll,
             "llm": llm,
             "ai_ok": bool(oll.get("ok") or llm["available"].get(llm.get("active", ""))),
@@ -788,6 +789,11 @@ async def tasks_delete(task_id: int, confirmed: bool = False):
 
 @app.get("/tasks/productivity")
 def tasks_productivity():
+    return task_service.productivity_report()
+
+@app.get("/productivity")
+def productivity_alias():
+    """Compatibility alias used by the dashboard."""
     return task_service.productivity_report()
 
 @app.get("/reminders/due")
