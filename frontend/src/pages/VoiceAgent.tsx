@@ -32,7 +32,9 @@ export default function VoiceAgent() {
   const pendingTextRef = useRef('')
   const lastSentRef = useRef('')
   const statusRef = useRef(state)
+  const logRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => { statusRef.current = state }, [state])
+  useEffect(() => { logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: 'smooth' }) }, [turns, interim, state])
 
   useEffect(() => { continuousRef.current = continuous }, [continuous])
   useEffect(() => { wakeWordRef.current = wakeWord }, [wakeWord])
@@ -293,11 +295,15 @@ export default function VoiceAgent() {
             </div>
           </div>
 
-          <div className="w-full max-w-md rounded-xl border border-[var(--border-soft)] bg-black/20 px-4 py-3 min-h-[72px]">
-            <div className="text-[11px] uppercase tracking-wide text-[var(--muted)]">{interim ? 'Hearing now' : 'Last response'}</div>
-            <div className="mt-1 text-sm text-slate-200 leading-relaxed">
-              {interim ? `“${interim}”` : (lastAssistant || 'Say “Find Python backend jobs in Hyderabad” or ask anything.')}
+          <div className="w-full max-w-md rounded-xl border border-[var(--border-soft)] bg-black/20 px-4 py-3 min-h-[88px]">
+            <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-[var(--muted)]">
+              <span>{state === 'listening' ? 'Listening live' : state === 'thinking' ? 'Processing' : state === 'speaking' ? 'Speaking' : 'Ready'}</span>
+              <span className={state === 'listening' ? 'text-red-300' : state === 'thinking' ? 'text-amber-300' : state === 'speaking' ? 'text-cyan-300' : 'text-slate-400'}>{state}</span>
             </div>
+            <div className="mt-2 text-sm text-slate-200 leading-relaxed min-h-[44px]">
+              {interim ? <span className="text-cyan-50">“{interim}”</span> : (lastAssistant || 'Tap Start talking, or use a quick command below.')}
+            </div>
+            <div className="mt-2 flex gap-1">{[0,1,2,3,4].map(i => <span key={i} className={`h-1.5 flex-1 rounded-full ${state === 'listening' ? 'bg-red-400/70 animate-pulse' : state === 'thinking' ? 'bg-amber-400/60 animate-pulse' : state === 'speaking' ? 'bg-cyan-400/70 animate-pulse' : 'bg-white/10'}`} style={{animationDelay:`${i*120}ms`}} />)}</div>
           </div>
 
           <div className="grid w-full max-w-md grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-center">
@@ -318,27 +324,42 @@ export default function VoiceAgent() {
             <div className="text-sm text-cyan-200">Conversation</div>
             <div className="text-[11px] text-[var(--muted)]">{turns.length} turn{turns.length === 1 ? '' : 's'}</div>
           </div>
-          <div className="flex-1 space-y-3 overflow-auto pr-1">
-            {turns.length === 0 && <div className="rounded-xl border border-dashed border-[var(--border-soft)] p-4 text-sm text-[var(--muted)]">Try: “Find Python backend jobs in Hyderabad”, “Show my top job matches”, or “Show pending tasks”.</div>}
+          <div ref={logRef} className="flex-1 space-y-3 overflow-auto pr-1">
+            {turns.length === 0 && (
+              <div className="rounded-xl border border-dashed border-[var(--border-soft)] p-4">
+                <div className="text-sm text-slate-200">Ready for your command</div>
+                <div className="mt-2 grid gap-2 text-xs text-[var(--muted)] sm:grid-cols-2">
+                  {['Open YouTube', 'Find Python backend jobs in Hyderabad', 'Show my top job matches', 'Show pending tasks'].map(ex => (
+                    <button key={ex} onClick={() => { setTextInput(ex); void ask(ex) }} className="rounded-lg border border-[var(--border-soft)] bg-black/20 px-3 py-2 text-left hover:border-cyan-400/30 hover:text-cyan-100">{ex}</button>
+                  ))}
+                </div>
+              </div>
+            )}
             {turns.map((t) => (
               <div key={t.id} className="space-y-2">
                 <div className="flex justify-end"><div className="max-w-[85%] rounded-2xl rounded-br-md bg-cyan-500/15 border border-cyan-400/20 px-3 py-2 text-sm text-cyan-50">{t.user}</div></div>
                 <div className="flex justify-start">
                   <div className="max-w-[90%] rounded-2xl rounded-bl-md bg-black/25 border border-[var(--border-soft)] px-3 py-2 text-sm text-slate-200">
-                    {t.assistant || <span className="text-[var(--muted)]">Thinking...</span>}
+                    {t.assistant || <span className="inline-flex items-center gap-2 text-[var(--muted)]"><span className="h-2 w-2 rounded-full bg-cyan-300 animate-pulse"/>Thinking...</span>}
                     {t.openUrl && <a href={t.openUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-cyan-400/30 bg-cyan-500/10 px-3 py-1.5 text-xs text-cyan-200 hover:bg-cyan-500/20"><ExternalLink size={13}/> {t.openLabel || 'Open link'}</a>}
                     {t.needsApproval && <div className="mt-2 text-[11px] text-amber-300">Needs your approval in Approvals.</div>}
                   </div>
                 </div>
               </div>
             ))}
+            {interim && (
+              <div className="flex justify-end"><div className="max-w-[85%] rounded-2xl rounded-br-md border border-dashed border-cyan-400/30 bg-cyan-500/5 px-3 py-2 text-sm text-cyan-100/80">{interim}</div></div>
+            )}
           </div>
-          <div className="mt-3 flex gap-2 border-t border-[var(--border-soft)] pt-3">
-            <input value={textInput} onChange={(e) => setTextInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') sendText() }}
-              placeholder="Type a message..."
-              className="flex-1 px-3 py-2.5 rounded-xl text-sm bg-black/20 border border-[var(--border-soft)]" />
-            <button onClick={sendText} className="px-4 py-2.5 rounded-xl border border-cyan-400/30 text-cyan-200 inline-flex items-center gap-1 hover:bg-cyan-500/10"><Send size={14}/> Send</button>
+          <div className="mt-3 border-t border-[var(--border-soft)] pt-3">
+            <div className="flex gap-2">
+              <input value={textInput} onChange={(e) => setTextInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') sendText() }}
+                placeholder="Type a command or question..."
+                className="flex-1 px-3 py-2.5 rounded-xl text-sm bg-black/20 border border-[var(--border-soft)]" />
+              <button onClick={sendText} className="px-4 py-2.5 rounded-xl border border-cyan-400/30 text-cyan-200 inline-flex items-center gap-1 hover:bg-cyan-500/10"><Send size={14}/> Send</button>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">{['Open YouTube','Top job matches','Pending tasks','Today\'s hiring news'].map(c => <button key={c} onClick={() => { setTextInput(c); void ask(c) }} className="rounded-full border border-[var(--border-soft)] px-2.5 py-1 text-[11px] text-[var(--muted)] hover:text-cyan-200 hover:border-cyan-400/30">{c}</button>)}</div>
           </div>
         </div>
       </div>
