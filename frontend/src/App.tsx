@@ -2,7 +2,6 @@ import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Layout from './components/Layout'
-import ApiKeyGate from './components/ApiKeyGate'
 
 const CommandCenter = lazy(() => import('./pages/CommandCenter'))
 const Assistant = lazy(() => import('./pages/Assistant'))
@@ -35,8 +34,7 @@ function PageFallback() {
 export default function App() {
   return (
     <QueryClientProvider client={qc}>
-      <ApiKeyGate>
-        <BrowserRouter>
+      <BrowserRouter>
           <Routes>
             <Route element={<Layout />}>
               <Route index element={<Suspense fallback={<PageFallback />}><CommandCenter /></Suspense>} />
@@ -57,8 +55,7 @@ export default function App() {
               <Route path="settings" element={<Suspense fallback={<PageFallback />}><Settings /></Suspense>} />
             </Route>
           </Routes>
-        </BrowserRouter>
-      </ApiKeyGate>
+      </BrowserRouter>
     </QueryClientProvider>
   )
 }
