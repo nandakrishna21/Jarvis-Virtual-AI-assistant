@@ -1,4 +1,19 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _clean_key(value: str) -> str:
+    """Remove smart quotes and other non-ASCII characters from pasted keys.
+
+    Copying a key from a PDF or a chat bubble often adds Windows smart quotes
+    (U+201C/U+201D). HTTP headers must be ASCII, so those characters break every
+    provider call. They are stripped here instead of failing at request time.
+    """
+    if not value:
+        return value
+    cleaned = "".join(ch for ch in value if 32 <= ord(ch) < 127)
+    return cleaned.strip()
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
@@ -30,5 +45,12 @@ class Settings(BaseSettings):
     jarvis_lan_mode: bool = False  # when true the server is reachable from the LAN and every API call needs the API key
     user_name: str = "Nanda Krishna Talari"
     user_location: str = "Hyderabad, India"
+
+    @field_validator("nvidia_api_key", "gemini_api_key", "openrouter_api_key", "api_key", "jarvis_api_key", mode="before")
+    @classmethod
+    def _sanitize_keys(cls, value):
+        if isinstance(value, str):
+            return _clean_key(value)
+        return value
 
 settings = Settings()

@@ -40,6 +40,7 @@ export default function Layout() {
 
   useEffect(() => {
     let alive = true
+    let timer: any = null
     const load = async () => {
       try {
         const s = await api.get<SystemStatus>('/system/status')
@@ -54,9 +55,19 @@ export default function Layout() {
         if (alive) setResting(!!p?.resting)
       } catch { }
     }
+    const start = () => {
+      if (timer) clearInterval(timer)
+      timer = setInterval(() => { if (!document.hidden) load() }, 30000)
+    }
+    const onVisible = () => { if (!document.hidden) load() }
     load()
-    const t = setInterval(load, 12000)
-    return () => { alive = false; clearInterval(t) }
+    start()
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      alive = false
+      if (timer) clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [dispatch, location.pathname])
 
   useEffect(() => {

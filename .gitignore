@@ -20,3 +20,6 @@ dist/
 *.pyo
 *.log
 .DS_Store
+*.db-wal
+*.db-shm
+*.db-journal

@@ -65,7 +65,18 @@ export default function CommandCenter() {
     setLoading(false)
   }, [])
 
-  useEffect(() => { refresh(); const t = setInterval(refresh, 25000); return () => clearInterval(t) }, [refresh])
+  useEffect(() => {
+    let timer: any = null
+    const tick = () => { if (!document.hidden) refresh() }
+    refresh()
+    timer = setInterval(tick, 30000)
+    const onVisible = () => { if (!document.hidden) refresh() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      if (timer) clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [refresh])
 
   async function send(text?: string) {
     const msg = (text ?? input).trim()

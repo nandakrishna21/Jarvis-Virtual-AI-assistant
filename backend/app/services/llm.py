@@ -18,6 +18,24 @@ GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 PROVIDERS = ("ollama", "gemini", "openrouter", "nvidia")
 
+_client: httpx.AsyncClient | None = None
+_client_loop = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    """One pooled HTTP client for all remote providers (TLS reuse = faster)."""
+    global _client, _client_loop
+    import asyncio
+
+    loop = asyncio.get_running_loop()
+    if _client is None or _client_loop is not loop or _client.is_closed:
+        _client = httpx.AsyncClient(
+            timeout=httpx.Timeout(30.0, connect=5.0),
+            limits=httpx.Limits(max_connections=8, max_keepalive_connections=4),
+        )
+        _client_loop = loop
+    return _client
+
 
 def provider_status() -> dict:
     provider = (settings.llm_provider or "ollama").strip().lower()
@@ -160,40 +178,43 @@ async def _nvidia(prompt: str, system: str | None) -> dict:
     }
     base = (settings.nvidia_base_url or "https://integrate.api.nvidia.com/v1").rstrip("/")
     last_error = ""
-    async with httpx.AsyncClient(timeout=120) as c:
-        for model in models:
-            payload = {
-                "model": model,
-                "messages": messages,
-                "temperature": 0.3,
-                "max_tokens": settings.ollama_num_predict,
-            }
-            try:
-                r = await c.post(f"{base}/chat/completions", json=payload, headers=headers)
-            except Exception as exc:  # noqa: BLE001
-                last_error = f"{model}: {exc}"
-                continue
-            if r.status_code != 200:
-                last_error = f"{model}: HTTP {r.status_code} {r.text[:200]}"
-                continue
-            try:
-                data = r.json()
-            except Exception as exc:  # noqa: BLE001
-                last_error = f"{model}: bad json ({exc})"
-                continue
-            choices = data.get("choices") or []
-            if not choices:
-                last_error = f"{model}: no choices"
-                continue
-            message = choices[0].get("message") or {}
-            text = (message.get("content") or "").strip()
-            if not text:
-                text = (message.get("reasoning_content") or "").strip()
-            if not text:
-                last_error = f"{model}: empty reply"
-                continue
-            return {"ok": True, "response": text, "model": model,
-                    "elapsed": round(time.time() - start, 2), "provider": "nvidia"}
+    client = _get_client()
+    for model in models:
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.3,
+            "max_tokens": settings.ollama_num_predict,
+        }
+        try:
+            r = await client.post(f"{base}/chat/completions", json=payload, headers=headers)
+        except Exception as exc:  # noqa: BLE001
+            last_error = f"{model}: {exc}"
+            continue
+        if r.status_code in (401, 403):
+            # Bad credentials: trying more models or Ollama only wastes time.
+            raise RuntimeError(f"nvidia auth failed (HTTP {r.status_code}). Check NVIDIA_API_KEY in backend/.env.")
+        if r.status_code != 200:
+            last_error = f"{model}: HTTP {r.status_code} {r.text[:200]}"
+            continue
+        try:
+            data = r.json()
+        except Exception as exc:  # noqa: BLE001
+            last_error = f"{model}: bad json ({exc})"
+            continue
+        choices = data.get("choices") or []
+        if not choices:
+            last_error = f"{model}: no choices"
+            continue
+        message = choices[0].get("message") or {}
+        text = (message.get("content") or "").strip()
+        if not text:
+            text = (message.get("reasoning_content") or "").strip()
+        if not text:
+            last_error = f"{model}: empty reply"
+            continue
+        return {"ok": True, "response": text, "model": model,
+                "elapsed": round(time.time() - start, 2), "provider": "nvidia"}
     raise RuntimeError(f"nvidia provider failed: {last_error}")
 
 

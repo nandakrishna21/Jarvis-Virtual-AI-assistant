@@ -5,7 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-import psutil, os
+from starlette.concurrency import run_in_threadpool
+import asyncio, psutil, os
 from pathlib import Path
 from app.config import settings
 from app.services.ollama import health as ollama_health, running_models, unload_model
@@ -141,15 +142,22 @@ async def health():
 
 @app.get("/system/status")
 async def status():
-    vm = psutil.virtual_memory()
-    return {
-        "cpu_percent": psutil.cpu_percent(interval=0.1),
-        "ram_percent": vm.percent,
-        "ram_free_gb": round(vm.available / 1024**3, 2),
-        "ollama": await ollama_health(),
-        "model": settings.ollama_model,
-        "loaded_models": await running_models(),
-    }
+    from app.services import cache as cache_service
+
+    async def build():
+        vm = await run_in_threadpool(psutil.virtual_memory)
+        cpu = await run_in_threadpool(psutil.cpu_percent, None)
+        oll, loaded = await asyncio.gather(ollama_health(), running_models())
+        return {
+            "cpu_percent": cpu,
+            "ram_percent": vm.percent,
+            "ram_free_gb": round(vm.available / 1024**3, 2),
+            "ollama": oll,
+            "model": settings.ollama_model,
+            "loaded_models": loaded,
+        }
+
+    return await cache_service.get_or_set("system:status", 5, build)
 
 @app.post("/chat")
 async def chat(req: ChatRequest):
@@ -202,7 +210,7 @@ async def jobs_list(db: Session = Depends(get_db)):
              "url": r.url, "source": r.source, "verified": r.verified} for r in rows]
 
 @app.get("/jobs/top-matches")
-async def top_matches(db: Session = Depends(get_db)):
+def top_matches(db: Session = Depends(get_db)):
     rows = db.query(JobMatch).order_by(JobMatch.score.desc()).limit(5).all()
     out = []
     for m in rows:
@@ -469,25 +477,35 @@ async def gmail_status():
 @app.get("/gmail/account")
 async def gmail_account():
     """The connected Gmail address, so the UI can show which inbox is linked."""
-    if not gmail_client.token_exists():
-        return {"connected": False, "email": None,
-                "hint": "Run scripts/gmail_auth.py (read-only) - see docs/GMAIL_SETUP.md"}
-    try:
-        creds = gmail_client.load_credentials(gmail_client.SCOPES_SEND)
-        from googleapiclient.discovery import build
-        service = build("gmail", "v1", credentials=creds, cache_discovery=False)
-        profile = service.users().getProfile(userId="me").execute()
-    except Exception as exc:  # noqa: BLE001
-        return {"connected": False, "email": None, "error": str(exc)}
-    scopes = list(creds.scopes or []) if creds else []
-    return {
-        "connected": True,
-        "email": profile.get("emailAddress"),
-        "messages_total": profile.get("messagesTotal"),
-        "threads_total": profile.get("threadsTotal"),
-        "scopes": scopes,
-        "can_send": "https://www.googleapis.com/auth/gmail.send" in scopes,
-    }
+    from app.services import cache as cache_service
+
+    async def build():
+        if not gmail_client.token_exists():
+            return {"connected": False, "email": None,
+                    "hint": "Run scripts/gmail_auth.py (read-only) - see docs/GMAIL_SETUP.md"}
+
+        def _read_profile():
+            creds = gmail_client.load_credentials(gmail_client.SCOPES_SEND)
+            from googleapiclient.discovery import build
+            service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+            profile = service.users().getProfile(userId="me").execute()
+            return creds, profile
+
+        try:
+            creds, profile = await run_in_threadpool(_read_profile)
+        except Exception as exc:  # noqa: BLE001
+            return {"connected": False, "email": None, "error": str(exc)}
+        scopes = list(creds.scopes or []) if creds else []
+        return {
+            "connected": True,
+            "email": profile.get("emailAddress"),
+            "messages_total": profile.get("messagesTotal"),
+            "threads_total": profile.get("threadsTotal"),
+            "scopes": scopes,
+            "can_send": "https://www.googleapis.com/auth/gmail.send" in scopes,
+        }
+
+    return await cache_service.get_or_set("gmail:account", 60, build)
 
 
 @app.get("/emails")
@@ -635,7 +653,7 @@ async def tasks_delete(task_id: int, confirmed: bool = False):
     return task_service.delete_task(task_id, confirmed)
 
 @app.get("/tasks/productivity")
-async def tasks_productivity():
+def tasks_productivity():
     return task_service.productivity_report()
 
 @app.get("/reminders/due")
@@ -837,8 +855,13 @@ if FRONTEND_DIST.exists():
             except ValueError:
                 candidate = None
             if candidate and candidate.is_file():
-                return FileResponse(str(candidate))
+                headers = {}
+                if full_path.startswith("assets/"):
+                    headers["Cache-Control"] = "public, max-age=31536000, immutable"
+                else:
+                    headers["Cache-Control"] = "public, max-age=3600"
+                return FileResponse(str(candidate), headers=headers)
         index = FRONTEND_DIST / "index.html"
         if index.exists():
-            return FileResponse(str(index))
+            return FileResponse(str(index), headers={"Cache-Control": "no-cache"})
         return JSONResponse(status_code=404, content={"error": "frontend build not found"})

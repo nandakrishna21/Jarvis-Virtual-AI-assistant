@@ -13,7 +13,7 @@ router = APIRouter(tags=["actions"])
 
 
 @router.get("/actions")
-async def list_actions(status: str | None = None, db: Session = Depends(get_db)):
+def list_actions(status: str | None = None, db: Session = Depends(get_db)):
     return {
         "actions": proposals.list_proposals(db, status),
         "pending": proposals.pending_count(db),

@@ -43,7 +43,7 @@ def _greeting() -> str:
 
 
 @router.get("/assistant/greeting")
-async def greeting(db: Session = Depends(get_db)):
+def greeting(db: Session = Depends(get_db)):
     prefs = profile_service.get_preferences(db)
     pending = proposals.pending_count(db)
     jobs = db.query(Job).count()
@@ -88,7 +88,7 @@ async def assistant_command(req: ChatRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/assistant/history")
-async def assistant_history(limit: int = 40, db: Session = Depends(get_db)):
+def assistant_history(limit: int = 40, db: Session = Depends(get_db)):
     rows = db.query(AgentRun).order_by(AgentRun.id.desc()).limit(limit).all()
     return {
         "history": [

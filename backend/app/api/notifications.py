@@ -12,7 +12,7 @@ __all__ = ["router", "notify", "notify_safe"]
 
 
 @router.get("/notifications")
-async def list_notifications(unread_only: bool = False, limit: int = 50, db: Session = Depends(get_db)):
+def list_notifications(unread_only: bool = False, limit: int = 50, db: Session = Depends(get_db)):
     q = db.query(Notification)
     if unread_only:
         q = q.filter(Notification.is_read.is_(False))

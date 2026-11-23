@@ -7,7 +7,7 @@ only runs when the database file already contains the table.
 """
 import logging
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import sessionmaker
 
 from app.config import settings
@@ -15,7 +15,27 @@ from app.database.models import Base
 
 logger = logging.getLogger("jarvis.db")
 
-engine = create_engine(settings.database_url, connect_args={"check_same_thread": False})
+engine = create_engine(
+    settings.database_url,
+    connect_args={"check_same_thread": False, "timeout": 30},
+    pool_pre_ping=False,
+)
+
+
+@event.listens_for(engine, "connect")
+def _tune_sqlite(dbapi_connection, _record):
+    """WAL mode keeps reads fast while the app writes in the background."""
+    try:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.execute("PRAGMA cache_size=-20000")
+        cursor.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("could not tune sqlite pragmas: %s", exc)
+
+
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base.metadata.create_all(bind=engine)
 
