@@ -332,13 +332,13 @@ export default function VoiceAgent() {
           {isIOS && <div className="text-[11px] text-amber-300">iOS Safari may pause continuous listening when screen locks. Tap Start talking if needed.</div>}
         </div>
 
-        <div className="rounded-3xl border border-white/10 bg-black/20 flex flex-col min-h-[620px]">
+        <div className="rounded-3xl border border-white/10 bg-black/20 flex flex-col h-[72vh] min-h-[560px] max-h-[760px]">
           <div className="flex items-center justify-between border-b border-white/10 px-4 sm:px-5 py-4">
             <div><div className="text-sm font-medium text-slate-100 flex items-center gap-2"><Command size={14} className="text-cyan-300" />Conversation</div><div className="text-xs text-slate-400">{status.hint}</div></div>
             <div className="text-xs text-slate-500">{turns.length} turn{turns.length === 1 ? '' : 's'}</div>
           </div>
 
-          <div ref={logRef} className="flex-1 overflow-auto px-4 sm:px-5 py-4 space-y-4">
+          <div ref={logRef} className="flex-1 overflow-y-scroll overscroll-contain px-4 sm:px-5 py-4 space-y-4" style={{ scrollbarGutter: 'stable' }}>
             {draftVisible && (
               <div className="space-y-2">
                 <div className="flex justify-end">
