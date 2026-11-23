@@ -99,6 +99,20 @@ async def search_and_save(query: str, location: str, resume_skills: list[str] | 
                         for l in levels)
 
     jobs = await fetch_jobs(query, location, require_entry=require_entry)
+    ranked = save_ranked_jobs(jobs, query, location, resume_skills, prefs=prefs, replace=True)
+    return ranked[:5]
+
+
+def save_ranked_jobs(jobs: list[dict], query: str, location: str,
+                     resume_skills: list[str] | None = None, prefs: dict | None = None,
+                     replace: bool = False) -> list[dict]:
+    """Score fetched jobs against the resume and persist them.
+
+    ``replace`` keeps the original /jobs/search behaviour (the board is rebuilt
+    from the latest query). Connectors such as Apify pass ``replace=False`` so
+    they add to the board without discarding jobs found by other sources.
+    """
+    prefs = prefs if prefs is not None else _preferences()
     if resume_skills is None:
         db = SessionLocal()
         try:
@@ -109,47 +123,59 @@ async def search_and_save(query: str, location: str, resume_skills: list[str] | 
         resume_skills = []
 
     ranked = rank(jobs, resume_skills, prefs, query, _learned_weights())
+    _store_ranked(ranked, query, location, replace=replace)
+    return ranked
+
+
+def _store_ranked(ranked: list[dict], query: str, location: str, replace: bool = True) -> None:
     db = SessionLocal()
     try:
         previous_feedback = {
             r.url: r.feedback for r in db.query(Job).all() if r.feedback
         }
-        db.query(Job).delete()
-        db.query(JobMatch).delete()
-        for j in ranked:
-            row = Job(
-                title=j["title"],
-                company=j.get("company"),
-                location=j.get("location"),
-                job_type=j.get("job_type"),
-                url=j["url"],
-                description=(j.get("description") or "")[:8000],
-                required_skills=",".join(j.get("required_skills") or []),
-                salary=j.get("salary"),
-                experience=j.get("experience") or (j.get("notes") or {}).get("experience"),
-                posting_date=j.get("posting_date"),
-                source=j.get("source"),
-                verified=j.get("verified", "unverified"),
-                seniority=j.get("seniority"),
-                tags=",".join((j.get("tags") or [])[:20]),
-                employment_type=j.get("employment_type") or "",
-                feedback=previous_feedback.get(j["url"]),
-            )
-            db.add(row)
+        existing: dict[str, Job] = {}
+        if replace:
+            db.query(Job).delete()
+            db.query(JobMatch).delete()
             db.flush()
-            db.add(JobMatch(
-                job_id=row.id,
-                score=j["score"],
-                matching_skills=",".join(j.get("matching_skills") or []),
-                missing_skills=",".join(j.get("missing_skills") or []),
-                components=json.dumps(j.get("components") or {}),
-                notes=json.dumps(j.get("notes") or {}),
-            ))
+        else:
+            urls = [j["url"] for j in ranked if j.get("url")]
+            if urls:
+                existing = {r.url: r for r in db.query(Job).filter(Job.url.in_(urls)).all()}
+        for j in ranked:
+            row = existing.get(j["url"])
+            if row is None:
+                row = Job(url=j["url"], title=j["title"])
+                db.add(row)
+            row.title = j["title"]
+            row.company = j.get("company")
+            row.location = j.get("location")
+            row.job_type = j.get("job_type")
+            row.description = (j.get("description") or "")[:8000]
+            row.required_skills = ",".join(j.get("required_skills") or [])
+            row.salary = j.get("salary")
+            row.experience = j.get("experience") or (j.get("notes") or {}).get("experience")
+            row.posting_date = j.get("posting_date")
+            row.source = j.get("source")
+            row.verified = j.get("verified", "unverified")
+            row.seniority = j.get("seniority")
+            row.tags = ",".join((j.get("tags") or [])[:20])
+            row.employment_type = j.get("employment_type") or ""
+            row.feedback = row.feedback or previous_feedback.get(j["url"])
+            db.flush()
+            match = db.query(JobMatch).filter(JobMatch.job_id == row.id).first()
+            if match is None:
+                match = JobMatch(job_id=row.id)
+                db.add(match)
+            match.score = j["score"]
+            match.matching_skills = ",".join(j.get("matching_skills") or [])
+            match.missing_skills = ",".join(j.get("missing_skills") or [])
+            match.components = json.dumps(j.get("components") or {})
+            match.notes = json.dumps(j.get("notes") or {})
         db.commit()
         _notify_matches(db, ranked, query, location)
     finally:
         db.close()
-    return ranked[:5]
 
 
 def _notify_matches(db, ranked: list[dict], query: str, location: str) -> None:

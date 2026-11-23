@@ -41,7 +41,7 @@ from app.services import job_actions as job_actions_service
 from app.agents.job_discovery import feedback as job_feedback_service
 from app.agents.job_discovery.service import search_and_save
 from app.agents.job_discovery import feedback as job_feedback_service
-from app.agents.job_discovery.service import rescore_stored
+from app.agents.job_discovery.service import rescore_stored, save_ranked_jobs
 from app.utils.logging_setup import get_logger
 import json
 from app.api import actions as actions_api
@@ -337,6 +337,55 @@ async def jobs_search(req: JobSearch, db: Session = Depends(get_db)):
     rp = db.query(ResumeProfile).order_by(ResumeProfile.id.desc()).first()
     skills = rp.extracted_skills.split(",") if rp and rp.extracted_skills else []
     return await search_and_save(req.query, req.location, skills)
+
+
+class ApifyJobSearch(BaseModel):
+    query: str = Field("Python Backend Developer", min_length=1, max_length=200)
+    location: str = Field("Hyderabad, India", max_length=200)
+    limit: int = Field(20, ge=1, le=50)
+
+
+@app.get("/jobs/apify/status")
+def jobs_apify_status():
+    from app.services import apify as apify_service
+
+    return {
+        "enabled": apify_service.enabled(),
+        "actor": apify_service.actor_name(),
+        "country": apify_service.country_for(settings.user_location),
+        "max_items": settings.apify_max_items,
+    }
+
+
+@app.post("/jobs/apify")
+async def jobs_apify(req: ApifyJobSearch, request: Request, db: Session = Depends(get_db)):
+    """Paid deep search via Apify. Adds to the board without clearing it."""
+    from app.services import apify as apify_service
+
+    if not apify_service.enabled():
+        return {"ok": False, "error": "Apify is not configured. Set APIFY_API_KEY in backend/.env."}
+    allowed, retry_after = rate_limit_service.allow(
+        "apify", rate_limit_service.client_ip(request), settings.apify_per_minute
+    )
+    if not allowed:
+        return JSONResponse(
+            status_code=429,
+            content={
+                "ok": False,
+                "error": "Apify search rate limit reached. Try again in a minute.",
+                "retry_after": retry_after,
+            },
+        )
+    try:
+        jobs = await apify_service.search_jobs(req.query, req.location, req.limit)
+    except apify_service.ApifyError as exc:
+        return {"ok": False, "error": str(exc)}
+    if not jobs:
+        return {"ok": True, "source": "apify", "count": 0, "jobs": []}
+    rp = db.query(ResumeProfile).order_by(ResumeProfile.id.desc()).first()
+    skills = rp.extracted_skills.split(",") if rp and rp.extracted_skills else []
+    ranked = save_ranked_jobs(jobs, req.query, req.location, skills, replace=False)
+    return {"ok": True, "source": "apify", "count": len(jobs), "jobs": ranked}
 
 @app.get("/jobs")
 async def jobs_list(db: Session = Depends(get_db)):
