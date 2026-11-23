@@ -1,5 +1,5 @@
 /* JARVIS service worker: offline app shell, always-fresh API. */
-const VERSION = 'jarvis-v11'
+const VERSION = 'jarvis-v12'
 const SHELL_CACHE = `${VERSION}-shell`
 const ASSET_CACHE = `${VERSION}-assets`
 

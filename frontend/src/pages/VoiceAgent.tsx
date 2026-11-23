@@ -61,8 +61,10 @@ export default function VoiceAgent() {
   const wakeWord = useAppSelector((s) => s.voice.wakeWord)
   const error = useAppSelector((s) => s.voice.error)
   const [textInput, setTextInput] = useState('')
-  const [silenceMs, setSilenceMs] = useState(3000)
+  const [silenceMs, setSilenceMs] = useState(() => { const v = Number(localStorage.getItem('jarvis.voice.silenceMs')); return [1500,2000,3000,4000].includes(v) ? v : 3000 })
+  const [captured, setCaptured] = useState('')
   const isIOS = typeof navigator !== 'undefined' && /iphone|ipad|ipod/i.test(navigator.userAgent)
+  useEffect(() => { try { localStorage.setItem('jarvis.voice.silenceMs', String(silenceMs)) } catch {} }, [silenceMs])
 
   const recognitionRef = useRef<any>(null)
   const speakingRef = useRef(false)
@@ -184,6 +186,7 @@ export default function VoiceAgent() {
     lastSentRef.current = clean
     window.setTimeout(() => { if (lastSentRef.current === clean) lastSentRef.current = '' }, 3000)
     dispatch({ type: 'voice/interim', payload: '' })
+    setCaptured('')
     if (wakeWordRef.current) {
       const lower = clean.toLowerCase()
       if (!lower.includes('jarvis')) {
@@ -193,12 +196,14 @@ export default function VoiceAgent() {
         return
       }
       statusRef.current = 'thinking'
+      dispatch({ type: 'voice/status', payload: 'thinking' })
       try { recognitionRef.current?.stop() } catch { /* restart after reply */ }
       const stripped = lower.replace(/^.*?jarvis\s*/, '').trim()
       void ask(stripped || clean)
       return
     }
     statusRef.current = 'thinking'
+    dispatch({ type: 'voice/status', payload: 'thinking' })
     try { recognitionRef.current?.stop() } catch { /* restart after reply */ }
     void ask(clean)
   }
@@ -230,6 +235,7 @@ export default function VoiceAgent() {
         pendingTextRef.current = `${pendingTextRef.current} ${finalText}`.replace(/\s+/g, ' ').trim()
       }
       const combined = `${pendingTextRef.current} ${interimText}`.replace(/\s+/g, ' ').trim()
+      setCaptured(combined)
       dispatch({ type: 'voice/interim', payload: combined.slice(-180) })
       if (speakingRef.current && combined) {
         window.speechSynthesis?.cancel()
@@ -276,6 +282,7 @@ export default function VoiceAgent() {
     shouldListenRef.current = false
     if (silenceRef.current) { window.clearTimeout(silenceRef.current); silenceRef.current = null }
     pendingTextRef.current = ''
+    setCaptured('')
     try { recognitionRef.current?.stop() } catch { }
     recognitionRef.current = null
     dispatch({ type: 'voice/status', payload: 'idle' })
@@ -296,6 +303,7 @@ export default function VoiceAgent() {
 
   async function toggleListening() {
     if (state === 'listening') {
+      if (captured.trim()) { submitVoice(captured); return }
       stopRecognition()
       return
     }
@@ -305,6 +313,7 @@ export default function VoiceAgent() {
     shouldListenRef.current = true
     lastSentRef.current = ''
     pendingTextRef.current = ''
+    setCaptured('')
     const ok = await ensureMic()
     if (!ok) { shouldListenRef.current = false; return }
     const started = startRecognition()
@@ -347,7 +356,7 @@ export default function VoiceAgent() {
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-[11px] text-cyan-100"><Sparkles size={12}/> Voice Command Center</div>
             <h1 className="mt-3 text-2xl sm:text-3xl font-semibold tracking-tight text-white">Talk to JARVIS like a real assistant</h1>
-            <p className="mt-1 text-sm text-slate-300/80 max-w-2xl">Fast voice commands, live transcription, actionable replies, and hands-free control for jobs, tasks, email and daily work.</p>
+            <p className="mt-1 text-sm text-slate-300/80 max-w-2xl">Speak naturally. JARVIS captures your command, auto-sends after a short pause, and responds with actions for jobs, tasks, email, and daily work.</p>
           </div>
           <div className="flex flex-wrap gap-2 text-xs">
             <div className={`rounded-full border px-3 py-1.5 ${state === 'listening' ? 'border-red-400/40 bg-red-500/10 text-red-200' : state === 'thinking' ? 'border-amber-400/40 bg-amber-500/10 text-amber-200' : state === 'speaking' ? 'border-cyan-400/40 bg-cyan-500/10 text-cyan-200' : 'border-white/10 bg-white/5 text-slate-300'}`}>{ORB_STATES[state]}</div>
@@ -372,13 +381,19 @@ export default function VoiceAgent() {
             </div>
 
             <div className="mt-5 w-full rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-left">
-              <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-slate-400"><span>{state === 'listening' ? 'Live transcript' : 'Assistant status'}</span><span className={state === 'listening' ? 'text-red-300' : state === 'thinking' ? 'text-amber-300' : state === 'speaking' ? 'text-cyan-300' : 'text-slate-400'}>{state}</span></div>
-              <div className="mt-2 min-h-[56px] text-sm leading-relaxed text-slate-200">{interim ? <span className="text-cyan-50">“{interim}”</span> : (lastAssistant || 'Tap Start talking, then speak. When you pause, JARVIS will auto-send your command.')}</div>
+              <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-slate-400"><span>{state === 'listening' ? 'Captured command' : 'Assistant status'}</span><span className={state === 'listening' ? 'text-red-300' : state === 'thinking' ? 'text-amber-300' : state === 'speaking' ? 'text-cyan-300' : 'text-slate-400'}>{state}</span></div>
+              <div className="mt-2 min-h-[56px] text-sm leading-relaxed text-slate-200">
+                {captured ? <span className="text-cyan-50">“{captured}”</span> : (lastAssistant || 'Tap Start talking, speak your command, and pause. JARVIS will auto-send it.')}
+              </div>
+              <div className="mt-3 flex items-center justify-between gap-2 text-[11px] text-slate-400">
+                <span>{state === 'listening' ? `Auto-send after ${silenceMs/1000}s pause` : state === 'thinking' ? 'Sending to JARVIS...' : state === 'speaking' ? 'Replying...' : 'Ready'}</span>
+                {captured && state === 'listening' && <button onClick={() => submitVoice(captured)} className="rounded-md border border-cyan-400/30 px-2 py-1 text-cyan-200 hover:bg-cyan-500/10">Send now</button>}
+              </div>
               <div className="mt-3 flex gap-1">{[0,1,2,3,4,5,6].map(i => <span key={i} className={`h-1.5 flex-1 rounded-full ${state === 'listening' ? 'bg-red-400/70 animate-pulse' : state === 'thinking' ? 'bg-amber-400/60 animate-pulse' : state === 'speaking' ? 'bg-cyan-400/70 animate-pulse' : 'bg-white/10'}`} style={{animationDelay:`${i*90}ms`}} />)}</div>
             </div>
 
             <div className="mt-4 grid w-full grid-cols-2 gap-2 sm:grid-cols-4">
-              <button onClick={toggleListening} className={`col-span-2 sm:col-span-2 rounded-2xl px-4 py-3 text-sm font-medium inline-flex items-center justify-center gap-2 border transition ${state === 'listening' ? 'border-red-400/50 bg-red-500/15 text-red-100' : 'border-cyan-400/40 bg-cyan-500/15 text-cyan-50 hover:bg-cyan-500/25'}`}>{state === 'listening' ? <MicOff size={16}/> : <Mic size={16}/>}{state === 'listening' ? 'Stop listening' : 'Start talking'}</button>
+              <button onClick={toggleListening} className={`col-span-2 sm:col-span-2 rounded-2xl px-4 py-3 text-sm font-medium inline-flex items-center justify-center gap-2 border transition ${state === 'listening' ? 'border-red-400/50 bg-red-500/15 text-red-100' : 'border-cyan-400/40 bg-cyan-500/15 text-cyan-50 hover:bg-cyan-500/25'}`}>{state === 'listening' ? (captured ? <Send size={16}/> : <MicOff size={16}/>) : <Mic size={16}/>}{state === 'listening' ? (captured ? 'Send command' : 'Stop listening') : 'Start talking'}</button>
               <button onClick={stopSpeaking} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 hover:bg-white/10 inline-flex items-center justify-center gap-2"><Square size={15}/>Stop</button>
               <button onClick={() => speak(turns[turns.length - 1]?.assistant || '')} disabled={!turns.length} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 hover:bg-white/10 disabled:opacity-40 inline-flex items-center justify-center gap-2"><Volume2 size={15}/>Repeat</button>
             </div>
@@ -418,7 +433,13 @@ export default function VoiceAgent() {
                 </div>
               </div>
             ))}
-            {interim && <div className="flex justify-end"><div className="max-w-[85%] rounded-2xl rounded-br-md border border-dashed border-cyan-400/30 bg-cyan-500/5 px-4 py-2.5 text-sm text-cyan-100/80"><div className="text-[10px] uppercase tracking-wide text-cyan-300/70 mb-1">Live transcript</div>“{interim}”</div></div>}
+            {(state === 'listening' || state === 'thinking') && interim && (
+              <div className="flex justify-start">
+                <div className="max-w-[92%] rounded-2xl rounded-bl-md border border-cyan-400/15 bg-cyan-500/[0.04] px-4 py-2.5 text-xs text-cyan-200/80">
+                  <span className="inline-flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-cyan-300 animate-pulse"/>Heard: “{interim}”{state === 'listening' ? ' — auto-sending when you pause...' : ' — sending...'}</span>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="border-t border-white/10 p-4 sm:p-5">
