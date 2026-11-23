@@ -80,7 +80,7 @@ export default function VoiceAgent() {
   useEffect(() => { statusRef.current = state }, [state])
   useEffect(() => { continuousRef.current = continuous }, [continuous])
   useEffect(() => { wakeWordRef.current = wakeWord }, [wakeWord])
-  useEffect(() => { logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: 'smooth' }) }, [turns, captured, state])
+  useEffect(() => { logRef.current?.scrollTo({ top: 0, behavior: 'smooth' }) }, [turns.length, state])
 
   useEffect(() => {
     const loadVoices = () => {
@@ -165,10 +165,23 @@ export default function VoiceAgent() {
     void ask(clean)
   }
 
+  function safeRestart(delay = 300) {
+    if (!shouldListenRef.current || !continuousRef.current) return
+    window.setTimeout(() => {
+      if (!shouldListenRef.current || !continuousRef.current) return
+      if (speakingRef.current || statusRef.current === 'thinking') return
+      try { recognitionRef.current?.abort?.() } catch {}
+      try { recognitionRef.current?.stop?.() } catch {}
+      recognitionRef.current = null
+      startRecognition()
+    }, delay)
+  }
+
   function startRecognition() {
     const SR: any = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     if (!window.isSecureContext) { dispatch({ type: 'voice/error', payload: 'Voice requires HTTPS. Use the Tailscale HTTPS URL on mobile.' }); return false }
     if (!SR) { dispatch({ type: 'voice/error', payload: 'Speech recognition is not supported in this browser. Use Chrome/Edge, or type your command.' }); return false }
+    if (recognitionRef.current) { try { recognitionRef.current.onend = null; recognitionRef.current.abort?.() } catch {} recognitionRef.current = null }
     const rec = new SR()
     rec.continuous = !isIOS; rec.interimResults = true; rec.lang = 'en-US'; rec.maxAlternatives = 1
     rec.onresult = (event: any) => {
@@ -181,7 +194,10 @@ export default function VoiceAgent() {
       const combined = `${pendingTextRef.current} ${interimText}`.replace(/\s+/g, ' ').trim()
       setCaptured(combined); dispatch({ type: 'voice/interim', payload: combined.slice(-200) })
       if (speakingRef.current && combined) { window.speechSynthesis?.cancel(); speakingRef.current = false }
-      if (combined) { if (silenceRef.current) window.clearTimeout(silenceRef.current); silenceRef.current = window.setTimeout(() => submitVoice(combined), silenceMsRef.current) }
+      if (combined) {
+        if (silenceRef.current) window.clearTimeout(silenceRef.current)
+        silenceRef.current = window.setTimeout(() => submitVoice(pendingTextRef.current.trim() || combined), silenceMsRef.current)
+      }
     }
     rec.onerror = (e: any) => {
       const err = e?.error
@@ -195,13 +211,18 @@ export default function VoiceAgent() {
       const pending = pendingTextRef.current.trim()
       if (pending && statusRef.current !== 'thinking' && statusRef.current !== 'speaking') { submitVoice(pending); return }
       if (shouldListenRef.current && continuousRef.current && !speakingRef.current && statusRef.current !== 'thinking') {
-        setTimeout(() => { try { rec.start() } catch {} }, 250)
+        safeRestart(350)
       } else if (shouldListenRef.current && !continuousRef.current) {
-        dispatch({ type: 'voice/status', payload: 'idle' }); shouldListenRef.current = false
+        statusRef.current = 'idle'; dispatch({ type: 'voice/status', payload: 'idle' }); shouldListenRef.current = false
       }
     }
-    try { rec.start() } catch (err: any) { dispatch({ type: 'voice/error', payload: `Could not start microphone: ${err?.message || err}` }); return false }
-    recognitionRef.current = rec; dispatch({ type: 'voice/status', payload: 'listening' }); return true
+    try { rec.start() } catch (err: any) {
+      recognitionRef.current = null
+      dispatch({ type: 'voice/error', payload: `Could not start microphone: ${err?.message || err}` })
+      if (shouldListenRef.current && continuousRef.current) safeRestart(800)
+      return false
+    }
+    recognitionRef.current = rec; statusRef.current = 'listening'; dispatch({ type: 'voice/status', payload: 'listening' }); return true
   }
 
   function stopRecognition() {
@@ -306,15 +327,20 @@ export default function VoiceAgent() {
           </div>
 
           <div ref={logRef} className="flex-1 overflow-auto px-4 sm:px-5 py-4 space-y-4">
-            {turns.length === 0 && !draftVisible && (
-              <div className="rounded-2xl border border-dashed border-white/15 bg-white/[0.02] p-6 text-center">
-                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-cyan-500/10 text-cyan-300"><Mic size={20} /></div>
-                <div className="text-base font-medium text-slate-100">Ready for your command</div>
-                <p className="mt-1 text-sm text-slate-400 max-w-md mx-auto">Press <span className="text-cyan-200">Start talking</span>, speak naturally, and pause. Your transcript appears live and JARVIS auto-sends it.</p>
+            {draftVisible && (
+              <div className="space-y-2">
+                <div className="flex justify-end">
+                  <div className="max-w-[85%] rounded-2xl rounded-br-md bg-gradient-to-r from-cyan-500/20 to-blue-500/15 border border-cyan-400/30 px-4 py-2.5 text-sm text-cyan-50">
+                    <div className="text-[10px] uppercase tracking-wide text-cyan-300/70 mb-1">{state === 'thinking' ? 'Sending command' : 'Live transcript'}</div>
+                    {captured}
+                    {state === 'listening' && <div className="mt-1.5 text-[11px] text-cyan-200/60 inline-flex items-center gap-2"><span className="h-1.5 w-1.5 rounded-full bg-cyan-300 animate-pulse" />Auto-sending after pause…</div>}
+                  </div>
+                </div>
+                {state === 'thinking' && <div className="flex justify-start"><div className="rounded-2xl rounded-bl-md bg-white/[0.04] border border-white/10 px-4 py-3 text-sm text-slate-400 inline-flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-cyan-300 animate-pulse" />Thinking...</div></div>}
               </div>
             )}
 
-            {turns.map((t) => (
+            {[...turns].reverse().map((t) => (
               <div key={t.id} className="space-y-2">
                 <div className="flex justify-end"><div className="max-w-[85%] rounded-2xl rounded-br-md bg-gradient-to-r from-cyan-500/20 to-blue-500/15 border border-cyan-400/20 px-4 py-2.5 text-sm text-cyan-50">{t.user}</div></div>
                 <div className="flex justify-start">
@@ -328,16 +354,11 @@ export default function VoiceAgent() {
               </div>
             ))}
 
-            {draftVisible && (
-              <div className="space-y-2">
-                <div className="flex justify-end">
-                  <div className="max-w-[85%] rounded-2xl rounded-br-md bg-gradient-to-r from-cyan-500/20 to-blue-500/15 border border-cyan-400/30 px-4 py-2.5 text-sm text-cyan-50">
-                    <div className="text-[10px] uppercase tracking-wide text-cyan-300/70 mb-1">{state === 'thinking' ? 'Sending command' : 'Live transcript'}</div>
-                    {captured}
-                    {state === 'listening' && <div className="mt-1.5 text-[11px] text-cyan-200/60 inline-flex items-center gap-2"><span className="h-1.5 w-1.5 rounded-full bg-cyan-300 animate-pulse" />Auto-sending after pause…</div>}
-                  </div>
-                </div>
-                {state === 'thinking' && <div className="flex justify-start"><div className="rounded-2xl rounded-bl-md bg-white/[0.04] border border-white/10 px-4 py-3 text-sm text-slate-400 inline-flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-cyan-300 animate-pulse" />Thinking...</div></div>}
+            {turns.length === 0 && !draftVisible && (
+              <div className="rounded-2xl border border-dashed border-white/15 bg-white/[0.02] p-6 text-center">
+                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-cyan-500/10 text-cyan-300"><Mic size={20} /></div>
+                <div className="text-base font-medium text-slate-100">Ready for your command</div>
+                <p className="mt-1 text-sm text-slate-400 max-w-md mx-auto">Press <span className="text-cyan-200">Start talking</span>, speak naturally, and pause. Your transcript appears live and JARVIS auto-sends it.</p>
               </div>
             )}
           </div>
