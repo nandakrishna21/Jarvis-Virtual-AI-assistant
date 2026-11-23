@@ -76,3 +76,29 @@ Keep the same client if you like — it keeps working until you reset it. Never 
 - Draft replies are created with a pending send approval. Nothing is ever sent without your explicit approval of that exact message.
 - A changed draft is refused by design (`draft changed since approval request`).
 
+
+## Using Gmail from your phone
+
+Gmail is connected to the **server**, not to an individual device. You do not
+need to sign in again on your phone.
+
+1. Connect once on the PC (Step 2 above). The token lives in
+   `C:\JARVIS\credentials\token.json`.
+2. Make sure the PC is running JARVIS and Tailscale is on.
+3. On the phone open the Tailscale URL (HTTPS):
+   `https://<machine>.<tailnet>.ts.net`
+4. Open **Email Access**. It uses the same server token, so the inbox is the same
+   on phone and laptop.
+
+The public Render demo intentionally blocks `/gmail` and `/emails` for safety.
+If Email Access says "not connected" on the phone, you are on the Render demo
+URL or the PC server is stopped - not a Gmail problem.
+
+To re-authenticate (e.g. after rotating the OAuth client), run this on the PC:
+
+```powershell
+cd C:\JARVIS\backend
+.\.venv\Scripts\python scripts\gmail_auth.py --send
+```
+
+Then open the Tailscale URL on the phone again.
