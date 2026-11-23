@@ -1,4 +1,7 @@
-const BASE = '/api'
+// Same-origin by default (FastAPI serves the built SPA). Set
+// VITE_API_BASE_URL when the frontend is hosted separately, e.g.
+// https://jarvis-api.onrender.com/api
+const BASE = ((import.meta.env.VITE_API_BASE_URL as string | undefined) || '/api').replace(/\/$/, '')
 const KEY_STORAGE = 'jarvis.apiKey'
 
 export function getApiKey(): string {
@@ -46,6 +49,8 @@ export type SystemStatus = {
   ram_percent: number
   ram_free_gb: number
   ollama: { ok: boolean; models?: string[]; active_model?: string; model_available?: boolean; error?: string }
+  llm?: { provider: string; active: string; available: Record<string, boolean>; models: Record<string, string> }
+  ai_ok?: boolean
   model: string
   loaded_models: any[]
 }

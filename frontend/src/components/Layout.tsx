@@ -88,7 +88,7 @@ export default function Layout() {
     }
   }, [dispatch])
 
-  const ollamaOk = !!status?.ollama?.ok
+  const ollamaOk = status?.ai_ok ?? !!status?.ollama?.ok
 
   async function installApp() {
     if (installPrompt) {

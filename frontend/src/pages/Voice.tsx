@@ -37,10 +37,25 @@ export default function Voice() {
     }
   }, [])
 
+  function primeSpeech() {
+    // iOS Safari only allows speech after a user gesture. Queue a silent
+    // utterance on the tap so the later async reply can still be spoken.
+    try {
+      const synth = window.speechSynthesis
+      if (!synth) return
+      synth.speak(new SpeechSynthesisUtterance(' '))
+    } catch { /* not supported */ }
+  }
+
   async function startRecording() {
     setMicError(null)
+    primeSpeech()
     if (!navigator.mediaDevices?.getUserMedia) {
       setMicError('This browser does not support microphone capture.')
+      return
+    }
+    if (!window.isSecureContext) {
+      setMicError('Microphone capture needs HTTPS. Open the https:// URL (Tailscale or your hosting domain) instead of a plain http:// LAN address.')
       return
     }
     try {
@@ -64,9 +79,10 @@ export default function Voice() {
         try {
           const form = new FormData()
           form.append('audio', blob, 'clip.webm')
-          const res = await fetch('/api/voice/transcribe', { method: 'POST', body: form })
-          const data = await res.json()
-          if (data.error) setError(`${data.error}${data.hint ? ` - ${data.hint}` : ''}`)
+          // Use the shared client so the X-API-Key header and the /api base
+          // URL are applied exactly like every other request.
+          const data = await api.upload<Transcript>('/voice/transcribe', form)
+          if ((data as any)?.error) setError(`${(data as any).error}${(data as any).hint ? ` - ${(data as any).hint}` : ''}`)
           else {
             setTranscript(data)
             if (data.text) await ask(data.text)
@@ -152,13 +168,13 @@ export default function Voice() {
       <Card title="Push to talk">
         <div className="flex flex-col items-center gap-3 py-4">
           <button
-            onMouseDown={startRecording}
-            onMouseUp={stopRecording}
-            onMouseLeave={stopRecording}
-            onTouchStart={startRecording}
-            onTouchEnd={stopRecording}
+            onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture?.(e.pointerId); void startRecording() }}
+            onPointerUp={(e) => { e.preventDefault(); stopRecording() }}
+            onPointerCancel={stopRecording}
+            onContextMenu={(e) => e.preventDefault()}
             disabled={busy}
-            className={`flex h-28 w-28 items-center justify-center rounded-full border-4 text-sm font-semibold transition ${
+            style={{ touchAction: 'none' }}
+            className={`flex h-28 w-28 select-none items-center justify-center rounded-full border-4 text-sm font-semibold transition ${
               recording
                 ? 'border-red-500 bg-red-600 text-white shadow-lg shadow-red-900/50'
                 : 'border-slate-700 bg-slate-800 text-slate-200 hover:border-sky-600 hover:bg-slate-700'

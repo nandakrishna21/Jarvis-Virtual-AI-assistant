@@ -18,8 +18,8 @@ type Size = 'sm' | 'md' | 'lg'
 
 const SIZES: { key: Size; label: string; height: string; maxWidth: string }[] = [
   { key: 'sm', label: 'S', height: 'h-[360px]', maxWidth: 'max-w-[720px] mx-auto' },
-  { key: 'md', label: 'M', height: 'h-[calc(100vh-140px)]', maxWidth: '' },
-  { key: 'lg', label: 'L', height: 'h-[calc(100vh-120px)]', maxWidth: '' },
+  { key: 'md', label: 'M', height: 'h-[calc(100dvh-140px)] min-h-[320px]', maxWidth: '' },
+  { key: 'lg', label: 'L', height: 'h-[calc(100dvh-120px)] min-h-[360px]', maxWidth: '' },
 ]
 
 export default function Assistant() {

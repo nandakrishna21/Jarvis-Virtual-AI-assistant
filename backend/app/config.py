@@ -1,4 +1,4 @@
-from pydantic import field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -45,6 +45,28 @@ class Settings(BaseSettings):
     jarvis_lan_mode: bool = False  # when true the server is reachable from the LAN and every API call needs the API key
     user_name: str = "Nanda Krishna Talari"
     user_location: str = "Hyderabad, India"
+
+    # Deployment / public demo (both DEMO_MODE and JARVIS_DEMO_MODE are accepted)
+    demo_mode: bool = Field(False, validation_alias=AliasChoices("demo_mode", "JARVIS_DEMO_MODE"))
+    cors_origins: str = Field(
+        "http://127.0.0.1:5173,http://localhost:5173",
+        validation_alias=AliasChoices("cors_origins", "JARVIS_CORS_ORIGINS"),
+    )
+    backend_url: str = ""  # optional public URL, used by health/status output
+
+    # Abuse protection (per client IP, per minute). Set 0 to disable a bucket.
+    rate_limit_chat_per_minute: int = Field(
+        30, validation_alias=AliasChoices("rate_limit_chat_per_minute", "JARVIS_RATE_LIMIT_CHAT_PER_MINUTE")
+    )
+    rate_limit_voice_per_minute: int = Field(
+        20, validation_alias=AliasChoices("rate_limit_voice_per_minute", "JARVIS_RATE_LIMIT_VOICE_PER_MINUTE")
+    )
+    rate_limit_api_per_minute: int = Field(
+        240, validation_alias=AliasChoices("rate_limit_api_per_minute", "JARVIS_RATE_LIMIT_API_PER_MINUTE")
+    )
+    max_message_chars: int = Field(
+        4000, validation_alias=AliasChoices("max_message_chars", "JARVIS_MAX_MESSAGE_CHARS")
+    )
 
     @field_validator("nvidia_api_key", "gemini_api_key", "openrouter_api_key", "api_key", "jarvis_api_key", mode="before")
     @classmethod

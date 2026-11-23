@@ -2,7 +2,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
@@ -26,7 +26,7 @@ QUICK_COMMANDS = [
 
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(min_length=1, max_length=4000)
 
 
 def _greeting() -> str:

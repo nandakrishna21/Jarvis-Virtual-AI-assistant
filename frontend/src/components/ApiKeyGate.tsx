@@ -19,10 +19,18 @@ export default function ApiKeyGate({ children }: { children: React.ReactNode }) 
     setChecking(false)
   }
 
+  // /system/auth is protected, unlike /health, so it actually tells us whether
+  // the key is required. It also reports demo mode so visitors are not asked
+  // for a key on the public showcase deployment.
   useEffect(() => {
     let alive = true
-    api.get('/health').then(
-      () => { if (alive) { setLocked(false); setError(null); setChecking(false) } },
+    api.get<any>('/system/auth').then(
+      () => {
+        if (!alive) return
+        setLocked(false)
+        setError(null)
+        setChecking(false)
+      },
       (e: any) => { if (alive) applyResult(e) },
     )
     return () => { alive = false }
@@ -34,7 +42,7 @@ export default function ApiKeyGate({ children }: { children: React.ReactNode }) 
     setError(null)
     setChecking(true)
     try {
-      await api.get('/health')
+      await api.get<any>('/system/auth')
       setLocked(false)
       setChecking(false)
     } catch (e: any) {

@@ -1,9 +1,9 @@
 from fastapi import FastAPI, Depends, File, UploadFile, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 import asyncio, psutil, os
@@ -35,6 +35,8 @@ from app.services import backup as backup_service
 from app.services import auth as auth_service
 from app.services import documents as documents_service
 from app.services import llm as llm_service
+from app.services import rate_limit as rate_limit_service
+from app.services import demo as demo_service
 from app.services import job_actions as job_actions_service
 from app.agents.job_discovery import feedback as job_feedback_service
 from app.agents.job_discovery.service import search_and_save
@@ -66,9 +68,22 @@ async def lifespan(app: FastAPI):
     scheduler.stop()
     logger.info("JARVIS backend stopped")
 
+def _cors_origins() -> list[str]:
+    raw = (settings.cors_origins or "").strip()
+    if not raw or raw == "*":
+        return ["*"]
+    return [origin.strip().rstrip("/") for origin in raw.split(",") if origin.strip()]
+
+
 app = FastAPI(title="JARVIS", version="0.2.0", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
-                   allow_methods=["*"], allow_headers=["*"])
+_origins = _cors_origins()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_origins,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    allow_credentials=False if "*" in _origins else True,
+)
 
 
 @app.middleware("http")
@@ -129,24 +144,66 @@ def _is_api_path(path: str) -> bool:
     return False
 
 
+_CHAT_PATHS = {"/chat", "/assistant/chat", "/assistant/command"}
+
+
+def _rate_bucket(clean: str, method: str) -> tuple[str, int] | None:
+    if method == "GET":
+        return None
+    if clean.startswith("/voice/"):
+        return "voice", settings.rate_limit_voice_per_minute
+    if clean in _CHAT_PATHS:
+        return "chat", settings.rate_limit_chat_per_minute
+    return "api", settings.rate_limit_api_per_minute
+
+
 @app.middleware("http")
 async def api_key_guard(request, call_next):
-    """Require the local API key for API calls when one is configured.
+    """Protect the API, throttle abuse and fence off the public demo.
 
     The app shell and static files stay open so the unlock screen can load.
-    Every API route needs the key (important when the app is exposed through
-    LAN or a Tailscale tunnel), including direct calls that skip the /api prefix.
+    Every API route needs the key when one is configured (important when the
+    app is exposed through LAN, Tailscale or a public URL). In public demo mode
+    a safe read-only allowlist replaces the key and all expensive routes are
+    rate limited per client IP.
     """
     path = request.scope.get("path", "")
+    clean = demo_service.normalize(path)
     is_api = _is_api_path(path)
     mutating = request.method in ("POST", "PUT", "PATCH", "DELETE")
-    if not mutating and path in _SPA_PATHS and "text/html" in (request.headers.get("accept") or ""):
+    spa_navigation = (
+        not mutating
+        and clean in _SPA_PATHS
+        and "text/html" in (request.headers.get("accept") or "")
+    )
+    if spa_navigation:
         is_api = False
-    if auth_service.enabled() and (is_api or mutating):
+
+    if is_api or mutating:
+        if demo_service.is_blocked(path, request.method):
+            return JSONResponse(
+                status_code=403,
+                content={"error": "This action is disabled in the public demo."},
+            )
+        bucket = _rate_bucket(clean, request.method)
+        if bucket:
+            name, limit = bucket
+            allowed, retry_after = rate_limit_service.allow(
+                name, rate_limit_service.client_ip(request), limit
+            )
+            if not allowed:
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "error": "Too many requests. Please wait a moment and try again.",
+                        "retry_after": retry_after,
+                    },
+                    headers={"Retry-After": str(retry_after)},
+                )
+
+    if auth_service.enabled() and not demo_service.enabled() and (is_api or mutating):
         provided = request.headers.get("x-api-key") or request.query_params.get("api_key")
         if not auth_service.check(provided):
-            from fastapi.responses import JSONResponse
-
             return JSONResponse(
                 status_code=401,
                 content={
@@ -155,6 +212,28 @@ async def api_key_guard(request, call_next):
                 },
             )
     return await call_next(request)
+
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    """Add conservative browser hardening headers to every response."""
+    response = await call_next(request)
+    headers = response.headers
+    headers.setdefault("X-Content-Type-Options", "nosniff")
+    headers.setdefault("X-Frame-Options", "DENY")
+    headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    headers.setdefault("Permissions-Policy", "camera=(), geolocation=(), microphone=(self)")
+    headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
+        "script-src 'self'; connect-src 'self'; font-src 'self' data:; media-src 'self' blob:; "
+        "worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+    )
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+    if proto == "https":
+        headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
 
 
 app.include_router(actions_api.router)
@@ -170,11 +249,15 @@ app.include_router(resume_generator_api.router)
 app.include_router(weather_api.router)
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(min_length=1, max_length=4000)
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "app": settings.app_name}
+    return {
+        "status": "ok",
+        "app": settings.app_name,
+        "demo": demo_service.enabled(),
+    }
 
 @app.get("/system/status")
 async def status():
@@ -184,12 +267,15 @@ async def status():
         vm = await run_in_threadpool(psutil.virtual_memory)
         cpu = await run_in_threadpool(psutil.cpu_percent, None)
         oll, loaded = await asyncio.gather(ollama_health(), running_models())
+        llm = llm_service.provider_status()
         return {
             "cpu_percent": cpu,
             "ram_percent": vm.percent,
             "ram_free_gb": round(vm.available / 1024**3, 2),
             "ollama": oll,
-            "model": settings.ollama_model,
+            "llm": llm,
+            "ai_ok": bool(oll.get("ok") or llm["available"].get(llm.get("active", ""))),
+            "model": llm.get("models", {}).get(llm.get("active", "")) or settings.ollama_model,
             "loaded_models": loaded,
         }
 
@@ -206,6 +292,7 @@ async def metrics():
 @app.get("/system/auth")
 async def system_auth():
     status = auth_service.status()
+    status["demo_mode"] = demo_service.enabled()
     status["lan_mode"] = bool(getattr(settings, "jarvis_lan_mode", False))
     status["lan_note"] = (
         "LAN mode is on: every API call needs the API key."
@@ -805,8 +892,8 @@ async def voice_unload():
 
 
 class VoiceAgentReq(BaseModel):
-    message: str = ""
-    history: list[dict] | None = None
+    message: str = Field(default="", max_length=4000)
+    history: list[dict] | None = Field(default=None, max_length=20)
 
 
 @app.post("/voice/agent")

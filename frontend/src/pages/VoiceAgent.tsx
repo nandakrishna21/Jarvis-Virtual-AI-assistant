@@ -19,6 +19,7 @@ export default function VoiceAgent() {
   const wakeWord = useAppSelector((s) => s.voice.wakeWord)
   const error = useAppSelector((s) => s.voice.error)
   const [textInput, setTextInput] = useState('')
+  const isIOS = typeof navigator !== 'undefined' && /iphone|ipad|ipod/i.test(navigator.userAgent)
 
   const recognitionRef = useRef<any>(null)
   const speakingRef = useRef(false)
@@ -44,6 +45,13 @@ export default function VoiceAgent() {
       window.speechSynthesis?.cancel()
     }
   }, [])
+
+  function primeSpeech() {
+    // Unlock speech synthesis inside the user gesture (required by iOS Safari).
+    try {
+      if (window.speechSynthesis) window.speechSynthesis.speak(new SpeechSynthesisUtterance(' '))
+    } catch { /* not supported */ }
+  }
 
   function speak(text: string): Promise<void> {
     return new Promise(resolve => {
@@ -103,6 +111,10 @@ export default function VoiceAgent() {
 
   function startRecognition() {
     const SR: any = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!window.isSecureContext) {
+      dispatch({ type: 'voice/error', payload: 'Voice needs HTTPS. Open the https:// URL instead of a plain http:// LAN address.' })
+      return false
+    }
     if (!SR) {
       dispatch({ type: 'voice/error', payload: 'This browser has no speech recognition. Use Chrome or Edge, or type instead.' })
       return false
@@ -147,7 +159,12 @@ export default function VoiceAgent() {
         try { rec.start() } catch { /* already running */ }
       }
     }
-    rec.start()
+    try {
+      rec.start()
+    } catch (err: any) {
+      dispatch({ type: 'voice/error', payload: `Could not start the microphone: ${err?.message || err}` })
+      return false
+    }
     recognitionRef.current = rec
     dispatch({ type: 'voice/status', payload: 'listening' })
     return true
@@ -167,6 +184,7 @@ export default function VoiceAgent() {
       return
     }
     stopSpeaking()
+    primeSpeech()
     dispatch({ type: 'voice/error', payload: null })
     shouldListenRef.current = true
     const started = startRecognition()
@@ -211,6 +229,11 @@ export default function VoiceAgent() {
             <span>Only answer when I say “JARVIS”</span>
           </label>
         </div>
+        {isIOS && (
+          <p className="mt-2 text-[11px] text-amber-300">
+            On iPhone/iPad, tap “Start talking” for each turn. Safari pauses continuous listening when the screen locks or the tab is hidden.
+          </p>
+        )}
         {error && <div className="mt-3 text-sm text-red-300">{error}</div>}
       </div>
 
