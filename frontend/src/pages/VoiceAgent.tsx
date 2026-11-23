@@ -371,8 +371,8 @@ export default function VoiceAgent() {
       <div className="grid gap-4 xl:grid-cols-[420px_minmax(0,1fr)]">
         <div className="rounded-3xl border border-white/10 bg-black/20 p-4 sm:p-6 backdrop-blur">
           <div className="flex flex-col items-center text-center">
-            <div className={`relative h-44 w-44 sm:h-56 sm:w-56 rounded-full bg-gradient-to-br ${orbColor} border-4 flex items-center justify-center transition-all`}>
-              {(state === 'listening' || state === 'speaking' || state === 'thinking') && <div className="absolute inset-[-12px] rounded-full border border-white/10 animate-ping" />}
+            <div className={`relative h-40 w-40 sm:h-52 sm:w-52 rounded-full bg-gradient-to-br ${orbColor} border-4 flex items-center justify-center transition-all`}>
+              {(state === 'listening' || state === 'speaking' || state === 'thinking') && <div className="absolute inset-[-10px] rounded-full border border-white/10 animate-ping" />}
               <div className="absolute inset-3 rounded-full border border-white/10" />
               <div className="px-6">
                 <div className="text-[11px] uppercase tracking-[0.3em] text-white/70">{state}</div>
@@ -381,24 +381,27 @@ export default function VoiceAgent() {
             </div>
 
             <div className="mt-5 w-full rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-left">
-              <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-slate-400"><span>{state === 'listening' ? 'Captured command' : 'Assistant status'}</span><span className={state === 'listening' ? 'text-red-300' : state === 'thinking' ? 'text-amber-300' : state === 'speaking' ? 'text-cyan-300' : 'text-slate-400'}>{state}</span></div>
-              <div className="mt-2 min-h-[56px] text-sm leading-relaxed text-slate-200">
-                {captured ? <span className="text-cyan-50">“{captured}”</span> : (lastAssistant || 'Tap Start talking, speak your command, and pause. JARVIS will auto-send it.')}
+              <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-slate-400">
+                <span>{state === 'listening' ? 'Listening now' : state === 'thinking' ? 'Processing command' : state === 'speaking' ? 'JARVIS speaking' : 'Ready'}</span>
+                <span className={state === 'listening' ? 'text-red-300' : state === 'thinking' ? 'text-amber-300' : state === 'speaking' ? 'text-cyan-300' : 'text-slate-400'}>{state === 'listening' ? `auto-send ${silenceMs/1000}s` : state}</span>
               </div>
-              <div className="mt-3 flex items-center justify-between gap-2 text-[11px] text-slate-400">
-                <span>{state === 'listening' ? `Auto-send after ${silenceMs/1000}s pause` : state === 'thinking' ? 'Sending to JARVIS...' : state === 'speaking' ? 'Replying...' : 'Ready'}</span>
-                {captured && state === 'listening' && <button onClick={() => submitVoice(captured)} className="rounded-md border border-cyan-400/30 px-2 py-1 text-cyan-200 hover:bg-cyan-500/10">Send now</button>}
+              <div className="mt-2 min-h-[52px] text-sm leading-relaxed text-slate-200">
+                {state === 'listening' ? (captured ? <span className="text-cyan-50">“{captured}”</span> : <span className="text-slate-400">Speak now… your words appear live in conversation.</span>)
+                  : state === 'thinking' ? <span className="text-amber-100">Understanding and executing your command…</span>
+                  : state === 'speaking' ? <span className="text-cyan-100">{lastAssistant || 'Replying…'}</span>
+                  : <span className="text-slate-400">Press Start talking, speak naturally, pause, and JARVIS handles it.</span>}
               </div>
-              <div className="mt-3 flex gap-1">{[0,1,2,3,4,5,6].map(i => <span key={i} className={`h-1.5 flex-1 rounded-full ${state === 'listening' ? 'bg-red-400/70 animate-pulse' : state === 'thinking' ? 'bg-amber-400/60 animate-pulse' : state === 'speaking' ? 'bg-cyan-400/70 animate-pulse' : 'bg-white/10'}`} style={{animationDelay:`${i*90}ms`}} />)}</div>
+              <div className="mt-3 flex gap-1">{[0,1,2,3,4,5,6,7,8].map(i => <span key={i} className={`h-6 flex-1 rounded-full transition-all ${state === 'listening' ? 'bg-red-400/70 animate-pulse' : state === 'thinking' ? 'bg-amber-400/60 animate-pulse' : state === 'speaking' ? 'bg-cyan-400/70 animate-pulse' : 'bg-white/10'}`} style={{animationDelay:`${i*70}ms`, height: state==='idle'?6:undefined}} />)}</div>
+              {captured && state === 'listening' && <button onClick={() => submitVoice(captured)} className="mt-3 w-full rounded-xl border border-cyan-400/30 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-100 hover:bg-cyan-500/20 inline-flex items-center justify-center gap-2"><Send size={14}/>Send now</button>}
             </div>
 
-            <div className="mt-4 grid w-full grid-cols-2 gap-2 sm:grid-cols-4">
-              <button onClick={toggleListening} className={`col-span-2 sm:col-span-2 rounded-2xl px-4 py-3 text-sm font-medium inline-flex items-center justify-center gap-2 border transition ${state === 'listening' ? 'border-red-400/50 bg-red-500/15 text-red-100' : 'border-cyan-400/40 bg-cyan-500/15 text-cyan-50 hover:bg-cyan-500/25'}`}>{state === 'listening' ? (captured ? <Send size={16}/> : <MicOff size={16}/>) : <Mic size={16}/>}{state === 'listening' ? (captured ? 'Send command' : 'Stop listening') : 'Start talking'}</button>
-              <button onClick={stopSpeaking} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 hover:bg-white/10 inline-flex items-center justify-center gap-2"><Square size={15}/>Stop</button>
-              <button onClick={() => speak(turns[turns.length - 1]?.assistant || '')} disabled={!turns.length} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 hover:bg-white/10 disabled:opacity-40 inline-flex items-center justify-center gap-2"><Volume2 size={15}/>Repeat</button>
+            <div className="mt-4 grid w-full grid-cols-3 gap-2">
+              <button onClick={toggleListening} className={`col-span-2 rounded-2xl px-4 py-3.5 text-sm font-semibold inline-flex items-center justify-center gap-2 border transition ${state === 'listening' ? 'border-red-400/50 bg-red-500/15 text-red-100' : 'border-cyan-400/40 bg-cyan-500/20 text-cyan-50 hover:bg-cyan-500/30 shadow-[0_0_24px_rgba(34,211,238,0.12)]'}`}>{state === 'listening' ? (captured ? <Send size={16}/> : <MicOff size={16}/>) : <Mic size={16}/>}{state === 'listening' ? (captured ? 'Send now' : 'Stop') : 'Start talking'}</button>
+              <button onClick={stopSpeaking} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3.5 text-sm text-slate-200 hover:bg-white/10 inline-flex items-center justify-center gap-2"><Square size={15}/>Stop</button>
             </div>
-            <div className="mt-3 flex w-full gap-2">
-              <button onClick={() => dispatch({ type: 'voice/clear' })} disabled={!turns.length} className="flex-1 rounded-xl border border-white/10 px-3 py-2 text-xs text-slate-400 hover:text-red-300 disabled:opacity-40 inline-flex items-center justify-center gap-2"><Trash2 size={13}/>Clear conversation</button>
+            <div className="mt-2 grid w-full grid-cols-2 gap-2">
+              <button onClick={() => speak(turns[turns.length - 1]?.assistant || '')} disabled={!turns.length} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs text-slate-200 hover:bg-white/10 disabled:opacity-40 inline-flex items-center justify-center gap-2"><Volume2 size={14}/>Repeat reply</button>
+              <button onClick={() => { stopRecognition(); stopSpeaking(); dispatch({ type: 'voice/clear' }); setCaptured('') }} disabled={!turns.length && !captured} className="rounded-xl border border-white/10 px-3 py-2.5 text-xs text-slate-400 hover:text-red-300 disabled:opacity-40 inline-flex items-center justify-center gap-2"><Trash2 size={13}/>Clear chat</button>
             </div>
             {isIOS && <div className="mt-3 text-[11px] text-amber-300">iPhone Safari may pause continuous listening when screen locks. Tap Start talking if needed.</div>}
           </div>
@@ -411,10 +414,10 @@ export default function VoiceAgent() {
           </div>
 
           <div ref={logRef} className="flex-1 overflow-auto px-4 sm:px-5 py-4 space-y-4">
-            {turns.length === 0 && (
+            {turns.length === 0 && !captured && (
               <div className="rounded-2xl border border-dashed border-white/15 bg-white/[0.02] p-5">
-                <div className="text-base font-medium text-slate-100">What can I do for you?</div>
-                <p className="mt-1 text-sm text-slate-400">Try a command below, or just press Start talking and speak naturally.</p>
+                <div className="text-base font-medium text-slate-100">Ready for your command</div>
+                <p className="mt-1 text-sm text-slate-400">Press <span className="text-cyan-200">Start talking</span>. As you speak, your transcript appears here live. After you pause, JARVIS auto-sends and replies.</p>
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
                   {quickActions.map(a => <button key={a.label} onClick={() => { setTextInput(a.cmd); void ask(a.cmd) }} className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-left hover:border-cyan-400/30 hover:bg-cyan-500/5"><a.icon size={16} className="text-cyan-300"/><div><div className="text-sm text-slate-200">{a.label}</div><div className="text-[11px] text-slate-400">{a.cmd}</div></div></button>)}
                 </div>
@@ -433,11 +436,18 @@ export default function VoiceAgent() {
                 </div>
               </div>
             ))}
-            {(state === 'listening' || state === 'thinking') && interim && (
-              <div className="flex justify-start">
-                <div className="max-w-[92%] rounded-2xl rounded-bl-md border border-cyan-400/15 bg-cyan-500/[0.04] px-4 py-2.5 text-xs text-cyan-200/80">
-                  <span className="inline-flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-cyan-300 animate-pulse"/>Heard: “{interim}”{state === 'listening' ? ' — auto-sending when you pause...' : ' — sending...'}</span>
+            {captured && (state === 'listening' || state === 'thinking') && !turns.some(t => t.user === captured && !t.assistant) && (
+              <div className="space-y-2">
+                <div className="flex justify-end">
+                  <div className="max-w-[85%] rounded-2xl rounded-br-md bg-gradient-to-r from-cyan-500/20 to-blue-500/15 border border-cyan-400/30 px-4 py-2.5 text-sm text-cyan-50">
+                    <div className="text-[10px] uppercase tracking-wide text-cyan-300/70 mb-1">{state === 'thinking' ? 'Sending' : 'Live transcript'}</div>
+                    {captured}
+                    {state === 'listening' && <div className="mt-1 text-[11px] text-cyan-200/60">Auto-sending after pause…</div>}
+                  </div>
                 </div>
+                {state === 'thinking' && (
+                  <div className="flex justify-start"><div className="rounded-2xl rounded-bl-md bg-white/[0.04] border border-white/10 px-4 py-3 text-sm text-slate-400 inline-flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-cyan-300 animate-pulse"/>Thinking...</div></div>
+                )}
               </div>
             )}
           </div>
