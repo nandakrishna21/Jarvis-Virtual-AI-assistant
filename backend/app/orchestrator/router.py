@@ -323,19 +323,18 @@ async def handle(message: str, db=None) -> dict:
             return {"ok": True, "intent": intent, "response": "\n".join(lines), "jobs": jobs}
 
         if intent == "tasks":
-            from app.agents.tasks.service import list_tasks, productivity_report
+            from app.agents.task_manager.service import list_tasks, productivity_report
             report = productivity_report()
             tasks = list_tasks(status="pending")
             pending = report.get("pending", 0)
             due_today = report.get("due_today", 0)
             overdue = report.get("overdue", 0)
+            parts = [f"{pending} pending task{'s' if pending != 1 else ''}"]
+            if due_today: parts.append(f"{due_today} due today")
+            if overdue: parts.append(f"{overdue} overdue")
+            summary = "Pending: " + ", ".join(parts) + "."
             if pending == 0:
-                summary = "You're all clear. No pending tasks right now."
-            else:
-                parts = [f"{pending} pending task{'s' if pending != 1 else ''}"]
-                if due_today: parts.append(f"{due_today} due today")
-                if overdue: parts.append(f"{overdue} overdue")
-                summary = "You have " + ", ".join(parts) + "."
+                summary = "Pending: 0 tasks. You're all clear right now."
             lines = [summary]
             for t in tasks[:8]:
                 due = f" due {t['due_date']}" if t.get("due_date") else ""

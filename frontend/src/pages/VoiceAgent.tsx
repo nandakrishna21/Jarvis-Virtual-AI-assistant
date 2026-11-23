@@ -59,6 +59,10 @@ export default function VoiceAgent() {
   const [autoSpeak, setAutoSpeak] = useState(() => localStorage.getItem('jarvis.voice.autoSpeak') !== '0')
   const [showSettings, setShowSettings] = useState(false)
   const [wakeFlash, setWakeFlash] = useState(false)
+  const [sttMode, setSttMode] = useState<'browser' | 'whisper'>(() => (localStorage.getItem('jarvis.voice.sttMode') as any) === 'whisper' ? 'whisper' : 'browser')
+  const [micLevel, setMicLevel] = useState(0)
+  const [sttInfo, setSttInfo] = useState<string>('')
+  const [telemetry, setTelemetry] = useState({ restarts: 0, errors: 0, fallbacks: 0, last: 'idle' })
   const isIOS = typeof navigator !== 'undefined' && /iphone|ipad|ipod/i.test(navigator.userAgent)
 
   const recognitionRef = useRef<any>(null)
@@ -68,18 +72,31 @@ export default function VoiceAgent() {
   const continuousRef = useRef(continuous)
   const wakeWordRef = useRef(wakeWord)
   const autoSpeakRef = useRef(autoSpeak)
+  const sttModeRef = useRef(sttMode)
   const turnId = useRef(0)
   const voiceURI = useRef<string | null>(null)
   const silenceRef = useRef<number | null>(null)
   const pendingTextRef = useRef('')
-  const lastSentRef = useRef('')
+  const lastSentRef = useRef<{ text: string; at: number }>({ text: '', at: 0 })
   const statusRef = useRef(state)
   const logRef = useRef<HTMLDivElement | null>(null)
   const silenceMsRef = useRef(silenceMs)
+  const listenStartedAt = useRef(0)
+  const watchdogRef = useRef<number | null>(null)
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const recorderChunksRef = useRef<Blob[]>([])
+  const streamRef = useRef<MediaStream | null>(null)
+  const audioCtxRef = useRef<AudioContext | null>(null)
+  const analyserRef = useRef<AnalyserNode | null>(null)
+  const meterRafRef = useRef<number | null>(null)
 
   useEffect(() => { silenceMsRef.current = silenceMs; try { localStorage.setItem('jarvis.voice.silenceMs', String(silenceMs)) } catch {} }, [silenceMs])
   useEffect(() => { autoSpeakRef.current = autoSpeak; try { localStorage.setItem('jarvis.voice.autoSpeak', autoSpeak ? '1' : '0') } catch {} }, [autoSpeak])
+  useEffect(() => { sttModeRef.current = sttMode; try { localStorage.setItem('jarvis.voice.sttMode', sttMode) } catch {} }, [sttMode])
   useEffect(() => { statusRef.current = state }, [state])
+  const logTelemetry = (kind: 'restart'|'error'|'fallback', msg: string) => {
+    setTelemetry(t => ({ ...t, [kind === 'restart' ? 'restarts' : kind === 'error' ? 'errors' : 'fallbacks']: (t as any)[kind === 'restart' ? 'restarts' : kind === 'error' ? 'errors' : 'fallbacks'] + 1, last: msg.slice(0,80) }))
+  }
   useEffect(() => { continuousRef.current = continuous }, [continuous])
   useEffect(() => { wakeWordRef.current = wakeWord }, [wakeWord])
   useEffect(() => { logRef.current?.scrollTo({ top: 0, behavior: 'smooth' }) }, [turns.length, state])
@@ -98,11 +115,99 @@ export default function VoiceAgent() {
 
   function primeSpeech() { try { if (window.speechSynthesis) window.speechSynthesis.speak(new SpeechSynthesisUtterance(' ')) } catch {} }
 
+  function stopMeter() {
+    if (meterRafRef.current) { cancelAnimationFrame(meterRafRef.current); meterRafRef.current = null }
+    setMicLevel(0)
+  }
+
+  function startMeter(stream: MediaStream) {
+    try {
+      stopMeter()
+      const Ctx: any = (window as any).AudioContext || (window as any).webkitAudioContext
+      if (!Ctx) return
+      const ctx = audioCtxRef.current || new Ctx()
+      audioCtxRef.current = ctx
+      const src = ctx.createMediaStreamSource(stream)
+      const analyser = ctx.createAnalyser()
+      analyser.fftSize = 512
+      src.connect(analyser)
+      analyserRef.current = analyser
+      const data = new Uint8Array(analyser.frequencyBinCount)
+      const tick = () => {
+        if (!analyserRef.current) return
+        analyserRef.current.getByteTimeDomainData(data)
+        let sum = 0
+        for (let i = 0; i < data.length; i++) { const v = (data[i] - 128) / 128; sum += v * v }
+        const rms = Math.sqrt(sum / data.length)
+        setMicLevel(Math.min(100, Math.round(rms * 220)))
+        meterRafRef.current = requestAnimationFrame(tick)
+      }
+      tick()
+    } catch { /* meter optional */ }
+  }
+
+  async function getMicStream() {
+    if (streamRef.current) return streamRef.current
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+    streamRef.current = stream
+    startMeter(stream)
+    return stream
+  }
+
+  async function transcribeBlob(blob: Blob) {
+    const form = new FormData()
+    form.append('audio', blob, `voice-${Date.now()}.webm`)
+    const res = await api.upload<any>('/voice/transcribe', form)
+    if (res?.error) throw new Error(res.error)
+    return String(res?.text || '').trim()
+  }
+
+  function startWhisperCapture() {
+    return getMicStream().then((stream) => {
+      recorderChunksRef.current = []
+      const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : (MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '')
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
+      rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) recorderChunksRef.current.push(e.data) }
+      rec.onstop = async () => {
+        const blob = new Blob(recorderChunksRef.current, { type: rec.mimeType || 'audio/webm' })
+        recorderChunksRef.current = []
+        if (!shouldListenRef.current) return
+        if (blob.size < 1500) { if (shouldListenRef.current && continuousRef.current && statusRef.current !== 'thinking') setTimeout(() => startWhisperCapture().catch(()=>{}), 300); return }
+        try {
+          statusRef.current = 'thinking'; dispatch({ type: 'voice/status', payload: 'thinking' })
+          setSttInfo('Transcribing with Whisper fallback…')
+          const text = await transcribeBlob(blob)
+          setSttInfo(text ? 'Whisper transcript received.' : 'Whisper heard no speech.')
+          if (text) submitVoice(text)
+          else if (shouldListenRef.current && continuousRef.current) { statusRef.current = 'listening'; dispatch({ type: 'voice/status', payload: 'listening' }); setTimeout(() => startWhisperCapture().catch(()=>{}), 250) }
+        } catch (e: any) {
+          dispatch({ type: 'voice/error', payload: `Whisper fallback failed: ${e?.message || e}` })
+          setSttInfo('Whisper fallback error.')
+          if (shouldListenRef.current && continuousRef.current) { statusRef.current = 'listening'; dispatch({ type: 'voice/status', payload: 'listening' }); setTimeout(() => startWhisperCapture().catch(()=>{}), 1200) }
+        }
+      }
+      recorderRef.current = rec
+      rec.start()
+      statusRef.current = 'listening'; dispatch({ type: 'voice/status', payload: 'listening' })
+      setSttInfo('Using Whisper fallback recording.')
+      if (silenceRef.current) window.clearTimeout(silenceRef.current)
+      silenceRef.current = window.setTimeout(() => { try { if (rec.state === 'recording') rec.stop() } catch {} }, Math.max(3500, silenceMsRef.current + 1500))
+    })
+  }
+
+  function releaseMic() {
+    stopMeter()
+    try { recorderRef.current?.stop() } catch {}
+    recorderRef.current = null
+    recorderChunksRef.current = []
+    if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null }
+  }
+
   function speak(text: string): Promise<void> {
     return new Promise(resolve => {
       const synth = window.speechSynthesis
       if (!synth || !text || !autoSpeakRef.current) {
-        if (shouldListenRef.current && continuousRef.current && statusRef.current !== 'thinking') setTimeout(() => { try { recognitionRef.current?.start() } catch {} }, 250)
+        if (shouldListenRef.current && continuousRef.current && statusRef.current !== 'thinking') safeRestart(250)
         statusRef.current = 'idle'; dispatch({ type: 'voice/status', payload: 'idle' }); resolve(); return
       }
       synth.cancel()
@@ -112,7 +217,7 @@ export default function VoiceAgent() {
       speakingRef.current = true; statusRef.current = 'speaking'; dispatch({ type: 'voice/status', payload: 'speaking' })
       const done = () => {
         speakingRef.current = false; statusRef.current = 'idle'; dispatch({ type: 'voice/status', payload: 'idle' })
-        if (shouldListenRef.current && continuousRef.current) setTimeout(() => { try { recognitionRef.current?.start() } catch {} }, 250)
+        if (shouldListenRef.current && continuousRef.current) safeRestart(300)
         resolve()
       }
       utter.onend = done; utter.onerror = done; synth.speak(utter)
@@ -140,21 +245,22 @@ export default function VoiceAgent() {
       dispatch({ type: 'voice/error', payload: e?.message || 'Voice agent request failed' })
       dispatch({ type: 'voice/turnEnd', payload: { id, assistant: 'I could not complete that request. Check your connection and try again.' } })
       statusRef.current = 'idle'; dispatch({ type: 'voice/status', payload: 'idle' })
-      if (shouldListenRef.current && continuousRef.current) setTimeout(() => { try { recognitionRef.current?.start() } catch {} }, 250)
+      if (shouldListenRef.current && continuousRef.current) safeRestart(350)
     }
   }
 
   function submitVoice(text: string) {
     const clean = text.trim()
-    if (!clean || clean === lastSentRef.current) return
+    if (!clean) return
+    const now = Date.now()
+    if (clean === lastSentRef.current.text && now - lastSentRef.current.at < 1200) return
     if (wakeWordRef.current && !/\b(jarvis|javis|jarvus)\b/i.test(clean)) {
       pendingTextRef.current = ''; setCaptured(''); dispatch({ type: 'voice/interim', payload: '' })
       if (shouldListenRef.current && continuousRef.current) safeRestart(250)
       return
     }
     if (silenceRef.current) { window.clearTimeout(silenceRef.current); silenceRef.current = null }
-    pendingTextRef.current = ''; lastSentRef.current = clean
-    window.setTimeout(() => { if (lastSentRef.current === clean) lastSentRef.current = '' }, 3000)
+    pendingTextRef.current = ''; lastSentRef.current = { text: clean, at: now }
     dispatch({ type: 'voice/interim', payload: '' }); setCaptured('')
     const command = wakeWordRef.current ? clean.replace(/^.*?\b(jarvis|javis|jarvus)\b[\s,.:!-]*/i, '').trim() || clean : clean
     statusRef.current = 'thinking'; dispatch({ type: 'voice/status', payload: 'thinking' })
@@ -211,9 +317,9 @@ export default function VoiceAgent() {
       if (err === 'aborted') { recActiveRef.current = false; return }
       if (err === 'no-speech') { recActiveRef.current = false; if (shouldListenRef.current && continuousRef.current) safeRestart(250); return }
       if (err === 'network') { dispatch({ type: 'voice/error', payload: 'Speech recognition network error. Check internet and retry.' }); recActiveRef.current = false; if (shouldListenRef.current && continuousRef.current) safeRestart(1200); return }
-      dispatch({ type: 'voice/error', payload: `Speech recognition error: ${err || 'unknown'}` })
+      logTelemetry('error',`speech ${err||'unknown'}`); dispatch({ type: 'voice/error', payload: `Speech recognition error: ${err || 'unknown'}` })
       recActiveRef.current = false
-      if (shouldListenRef.current && continuousRef.current) safeRestart(800)
+      if (shouldListenRef.current && continuousRef.current) { logTelemetry('restart','error restart'); safeRestart(800) }
     }
     rec.onend = () => {
       recActiveRef.current = false
@@ -228,38 +334,67 @@ export default function VoiceAgent() {
     }
     try { rec.start() } catch (err: any) {
       recognitionRef.current = null
-      dispatch({ type: 'voice/error', payload: `Could not start microphone: ${err?.message || err}` })
-      if (shouldListenRef.current && continuousRef.current) safeRestart(800)
+      logTelemetry('fallback','browser->whisper'); dispatch({ type: 'voice/error', payload: `Could not start speech recognition: ${err?.message || err}. Falling back to Whisper when possible.` })
+      if (shouldListenRef.current) { setSttMode('whisper'); startWhisperCapture().catch(()=>{}); return true }
       return false
     }
-    recognitionRef.current = rec; statusRef.current = 'listening'; dispatch({ type: 'voice/status', payload: 'listening' }); return true
+    recognitionRef.current = rec; listenStartedAt.current = Date.now(); statusRef.current = 'listening'; dispatch({ type: 'voice/status', payload: 'listening' }); setSttInfo('Browser speech recognition active.'); return true
   }
 
   function stopRecognition() {
     shouldListenRef.current = false
     recActiveRef.current = false
     if (silenceRef.current) { window.clearTimeout(silenceRef.current); silenceRef.current = null }
+    if (watchdogRef.current) { window.clearInterval(watchdogRef.current); watchdogRef.current = null }
     pendingTextRef.current = ''; setCaptured('')
     try { if (recognitionRef.current) recognitionRef.current.onend = null as any; recognitionRef.current?.abort?.() } catch {}
     try { recognitionRef.current?.stop() } catch {}; recognitionRef.current = null
-    dispatch({ type: 'voice/status', payload: 'idle' }); dispatch({ type: 'voice/interim', payload: '' })
+    try { if (recorderRef.current?.state === 'recording') recorderRef.current.stop() } catch {}
+    releaseMic()
+    statusRef.current = 'idle'; dispatch({ type: 'voice/status', payload: 'idle' }); dispatch({ type: 'voice/interim', payload: '' })
   }
 
   async function ensureMic() {
     if (!navigator.mediaDevices?.getUserMedia) return true
-    try { const s = await navigator.mediaDevices.getUserMedia({ audio: true }); s.getTracks().forEach(t => t.stop()); return true }
-    catch { dispatch({ type: 'voice/error', payload: 'Microphone blocked. Allow microphone permission for this site and try again.' }); return false }
+    try { await getMicStream(); return true }
+    catch (e: any) { dispatch({ type: 'voice/error', payload: `Microphone blocked/unavailable: ${e?.message || 'permission denied'}` }); return false }
+  }
+
+  function startWatchdog() {
+    if (watchdogRef.current) window.clearInterval(watchdogRef.current)
+    watchdogRef.current = window.setInterval(() => {
+      if (!shouldListenRef.current || !continuousRef.current) return
+      if (sttModeRef.current !== 'browser') return
+      if (speakingRef.current || statusRef.current === 'thinking') return
+      const age = Date.now() - listenStartedAt.current
+      if (age > 45000 && !pendingTextRef.current.trim()) {
+        setSttInfo('Refreshing speech recognizer…')
+        try { recognitionRef.current?.abort?.() } catch {}
+      }
+      if (!recActiveRef.current) safeRestart(200)
+    }, 7000)
   }
 
   async function toggleListening() {
-    if (state === 'listening') { if (captured.trim()) { submitVoice(captured); return } stopRecognition(); return }
+    if (state === 'listening' || recActiveRef.current || recorderRef.current?.state === 'recording') {
+      if (captured.trim()) { submitVoice(captured); return }
+      stopRecognition(); return
+    }
     stopSpeaking(); primeSpeech(); dispatch({ type: 'voice/error', payload: null })
-    shouldListenRef.current = true; lastSentRef.current = ''; pendingTextRef.current = ''; setCaptured('')
+    shouldListenRef.current = true; lastSentRef.current = { text: '', at: 0 }; pendingTextRef.current = ''; setCaptured('')
+    setSttInfo('')
     const ok = await ensureMic(); if (!ok) { shouldListenRef.current = false; return }
+    if (sttModeRef.current === 'whisper' || !((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)) {
+      setSttMode('whisper')
+      await startWhisperCapture().catch((e: any) => dispatch({ type: 'voice/error', payload: `Whisper fallback unavailable: ${e?.message || e}` }))
+      return
+    }
+    listenStartedAt.current = Date.now()
     const started = startRecognition(); if (!started) shouldListenRef.current = false
+    startWatchdog()
   }
 
-  useEffect(() => () => { shouldListenRef.current = false; try { recognitionRef.current?.stop() } catch {}; window.speechSynthesis?.cancel() }, [])
+  useEffect(() => () => { shouldListenRef.current = false; if (watchdogRef.current) window.clearInterval(watchdogRef.current); try { recognitionRef.current?.stop() } catch {}; window.speechSynthesis?.cancel(); releaseMic(); try { audioCtxRef.current?.close?.() } catch {} }, [])
 
   async function sendText() { const text = textInput.trim(); if (!text) return; setTextInput(''); await ask(text) }
 
@@ -288,11 +423,12 @@ export default function VoiceAgent() {
           </div>
         </div>
         {showSettings && (
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm">
             <label className="flex items-center justify-between gap-3 text-slate-300"><span>Hands-free</span><input type="checkbox" checked={continuous} onChange={e => dispatch({ type: 'voice/continuous', payload: e.target.checked })} /></label>
             <label className="flex items-center justify-between gap-3 text-slate-300"><span>Wake word "JARVIS"</span><input type="checkbox" checked={wakeWord} onChange={e => dispatch({ type: 'voice/wakeWord', payload: e.target.checked })} /></label>
             <label className="flex items-center justify-between gap-3 text-slate-300"><span>Speak replies</span><input type="checkbox" checked={autoSpeak} onChange={e => setAutoSpeak(e.target.checked)} /></label>
             <label className="flex items-center justify-between gap-3 text-slate-300"><span>Auto-send pause</span><select value={silenceMs} onChange={e => setSilenceMs(Number(e.target.value))} className="rounded-md border border-white/10 bg-slate-900 px-2 py-1 text-cyan-200"><option value={1500}>1.5s</option><option value={2000}>2s</option><option value={3000}>3s</option><option value={4000}>4s</option></select></label>
+            <label className="flex items-center justify-between gap-3 text-slate-300"><span>STT mode</span><select value={sttMode} onChange={e => setSttMode(e.target.value as any)} className="rounded-md border border-white/10 bg-slate-900 px-2 py-1 text-cyan-200"><option value="browser">Browser</option><option value="whisper">Whisper fallback</option></select></label>
           </div>
         )}
         {error && <div className="mt-4 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200 flex items-start gap-2"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span>{error}</span></div>}
@@ -310,6 +446,12 @@ export default function VoiceAgent() {
             </div>
             <p className="mt-4 text-sm text-slate-300 min-h-[40px]">{wakeFlash ? 'Wake word detected.' : state === 'listening' ? (captured ? `“${captured}”` : wakeWord ? 'Say “JARVIS…” and your command.' : 'Listening… speak your command.') : state === 'thinking' ? 'Processing your command…' : state === 'speaking' ? (lastAssistant?.slice(0, 110) || 'Speaking…') : 'Ready for your next command.'}</p>
             <div className="mt-4 flex gap-1 justify-center">{Array.from({ length: 12 }).map((_, i) => <span key={i} className={`w-1.5 rounded-full ${state === 'idle' ? 'h-2 bg-white/10' : 'bg-cyan-400/70 animate-pulse'}`} style={{ height: state === 'idle' ? 8 : 8 + (i % 5) * 5, animationDelay: `${i * 60}ms` }} />)}</div>
+            <div className="mt-4">
+              <div className="flex items-center justify-between text-[11px] text-slate-400"><span>Mic level</span><span>{micLevel}% · {sttMode === 'whisper' ? 'Whisper' : 'Browser STT'}</span></div>
+              <div className="mt-1 h-2 rounded-full bg-white/10 overflow-hidden"><div className="h-full bg-cyan-400/80 transition-all" style={{ width: `${micLevel}%` }} /></div>
+              {sttInfo && <div className="mt-1 text-[11px] text-slate-500">{sttInfo}</div>}
+              <div className="mt-1 text-[10px] text-slate-500">restarts:{telemetry.restarts} errors:{telemetry.errors} fallback:{telemetry.fallbacks} · {telemetry.last}</div>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-2">
