@@ -164,6 +164,7 @@ export default function VoiceAgent() {
       await speak(reply)
     } catch (e: any) {
       dispatch({ type: 'voice/error', payload: e?.message || 'Voice agent failed' })
+      dispatch({ type: 'voice/turnEnd', payload: { id, assistant: 'I could not complete that request. Please try again.' } })
       statusRef.current = 'idle'
       dispatch({ type: 'voice/status', payload: 'idle' })
       if (shouldListenRef.current && continuousRef.current) {
