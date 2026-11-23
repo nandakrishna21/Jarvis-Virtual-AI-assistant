@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { api, type Greeting, type ChatResponse, type Proposal } from '../services/api'
 import Orb, { type OrbState } from '../components/jarvis/Orb'
 import ApprovalCard from '../components/jarvis/ApprovalCard'
-import { Send, Mic, Activity, Sparkles, ShieldAlert, Bell, Briefcase, Mail, ListTodo, Cpu, RefreshCw, ChevronRight, CheckCircle2, AlertTriangle, Moon, Sun, ExternalLink, CloudSun } from 'lucide-react'
+import { Send, Mic, Activity, Sparkles, ShieldAlert, Bell, Briefcase, Mail, ListTodo, Cpu, RefreshCw, ChevronRight, CheckCircle2, AlertTriangle, ExternalLink, CloudSun } from 'lucide-react'
 
 type Msg = { role: 'user' | 'assistant'; text: string; proposal?: Proposal; openUrl?: string; openLabel?: string; weather?: any }
 
@@ -80,7 +80,7 @@ export default function CommandCenter() {
 
   async function send(text?: string) {
     const msg = (text ?? input).trim()
-    if (!msg || busy) return
+    if (!msg || busy || resting) return
     setInput(''); setError(null)
     setMessages((m) => [...m, { role: 'user', text: msg }])
     setBusy(true); setState('thinking')
@@ -111,6 +111,7 @@ export default function CommandCenter() {
   }
 
   function toggleMic() {
+    if (resting) return
     const SR: any = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     if (!SR) { setError('Voice input is not supported in this browser. Use Chrome/Edge or type.'); return }
     if (listening) { recognitionRef.current?.stop(); setListening(false); setState('idle'); return }
@@ -147,43 +148,58 @@ export default function CommandCenter() {
       <section className="glass-strong rounded-2xl p-4 sm:p-5 relative overflow-hidden">
         <div className="absolute inset-0 scanline opacity-[0.07] pointer-events-none" />
         <div className="flex flex-col xl:flex-row gap-5 items-start">
-          <div className="flex-shrink-0 self-center xl:self-start"><Orb state={state} size={210} /></div>
+          <div className="flex-shrink-0 self-center xl:self-start"><Orb state={resting ? 'idle' : state} size={210} /></div>
           <div className="flex-1 min-w-0 w-full">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <div className="text-xs uppercase tracking-[0.2em] text-cyan-300/80">Mission Briefing</div>
                 <h1 className="text-xl sm:text-2xl font-semibold mt-1 glow-text">{b.greeting?.greeting || 'JARVIS Command Center'}</h1>
               </div>
               <div className="flex items-center gap-2">
-                <button onClick={togglePower} disabled={powerBusy} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition ${resting ? 'bg-indigo-500/20 border-indigo-400/40 text-indigo-200' : 'bg-emerald-500/15 border-emerald-400/35 text-emerald-200 hover:bg-emerald-500/25'}`} title={resting ? 'Wake JARVIS' : 'Put JARVIS in rest mode'}>
-                  {resting ? <Moon size={14}/> : <Sun size={14}/>}<span>{powerBusy ? '...' : resting ? 'OFF' : 'ON'}</span>
-                </button>
-                <button onClick={refresh} className="p-2 rounded-lg border border-[var(--border-soft)] text-[var(--muted)] hover:text-cyan-200" title="Refresh"><RefreshCw size={15}/></button>
+                <button onClick={refresh} disabled={resting} className="p-2 rounded-lg border border-[var(--border-soft)] text-[var(--muted)] hover:text-cyan-200 disabled:opacity-40" title="Refresh"><RefreshCw size={15}/></button>
               </div>
             </div>
-            <p className="text-sm text-slate-300/85 mt-2">{loading ? 'Loading systems...' : briefing}</p>
-            {error && <div className="mt-2 text-xs text-red-300 flex items-center gap-1.5"><AlertTriangle size={13}/>{error}</div>}
-            <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-2">
-              <Stat label="Approvals" value={pendingCount} accent={pendingCount > 0} onClick={() => document.getElementById('approval-queue')?.scrollIntoView({ behavior: 'smooth' })} />
-              <Stat label="High Matches" value={stats?.high_match ?? '--'} onClick={() => navigate('/matched')} />
-              <Stat label="Overdue Tasks" value={b.tasks?.overdue ?? '--'} accent={(b.tasks?.overdue ?? 0) > 0} onClick={() => navigate('/tasks')} />
-              <Stat label="Gmail" value={b.gmail?.connected ? 'Connected' : 'Offline'} accent={!b.gmail?.connected} onClick={() => navigate('/emails')} />
+            <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-[var(--border-soft)] bg-black/20 px-4 py-3">
+              <div>
+                <div className="text-sm font-medium text-slate-100">JARVIS Power</div>
+                <div className="text-xs text-[var(--muted)]">{resting ? 'Systems are paused. Turn on to enable all features.' : 'All systems are enabled and ready.'}</div>
+              </div>
+              <button
+                onClick={togglePower}
+                disabled={powerBusy}
+                role="switch"
+                aria-checked={!resting}
+                className={`relative inline-flex h-9 w-16 items-center rounded-full border transition ${resting ? 'bg-slate-700/60 border-slate-500/40' : 'bg-emerald-500/30 border-emerald-400/50'} disabled:opacity-60`}
+                title={resting ? 'Turn JARVIS on' : 'Turn JARVIS off'}
+              >
+                <span className={`inline-block h-7 w-7 transform rounded-full bg-white shadow transition ${resting ? 'translate-x-1' : 'translate-x-8'}`} />
+              </button>
             </div>
-            <div className="mt-4 flex gap-2">
-              <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key==='Enter' && send()} placeholder='Command JARVIS: "Find Python backend jobs in Hyderabad"' className="flex-1 px-3 py-2.5 rounded-lg text-sm bg-black/20" />
-              <button onClick={() => send()} disabled={busy} className="px-3 py-2 rounded-lg bg-cyan-500/20 border border-cyan-400/30 text-cyan-200 hover:bg-cyan-500/30 disabled:opacity-50"><Send size={16}/></button>
-              <button onClick={toggleMic} className={`px-3 py-2 rounded-lg border ${listening ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-200' : 'bg-white/5 border-[var(--border-soft)] text-[var(--muted)] hover:text-cyan-200'}`} title="Voice command"><Mic size={16}/></button>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {quick.map((q) => (
-                <button key={q.label} onClick={() => send(q.command)} className="text-xs px-2.5 py-1.5 rounded-full border border-cyan-400/20 text-cyan-100/90 bg-cyan-500/5 hover:bg-cyan-500/10">{q.label}</button>
-              ))}
+            <div className={resting ? 'pointer-events-none opacity-40 select-none' : ''}>
+              <p className="text-sm text-slate-300/85 mt-4">{loading ? 'Loading systems...' : briefing}</p>
+              {error && <div className="mt-2 text-xs text-red-300 flex items-center gap-1.5"><AlertTriangle size={13}/>{error}</div>}
+              <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-2">
+                <Stat label="Approvals" value={pendingCount} accent={pendingCount > 0} onClick={() => document.getElementById('approval-queue')?.scrollIntoView({ behavior: 'smooth' })} />
+                <Stat label="High Matches" value={stats?.high_match ?? '--'} onClick={() => navigate('/matched')} />
+                <Stat label="Overdue Tasks" value={b.tasks?.overdue ?? '--'} accent={(b.tasks?.overdue ?? 0) > 0} onClick={() => navigate('/tasks')} />
+                <Stat label="Gmail" value={b.gmail?.connected ? 'Connected' : 'Offline'} accent={!b.gmail?.connected} onClick={() => navigate('/emails')} />
+              </div>
+              <div className="mt-4 flex gap-2">
+                <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key==='Enter' && send()} placeholder='Command JARVIS: "Find Python backend jobs in Hyderabad"' className="flex-1 px-3 py-2.5 rounded-lg text-sm bg-black/20" />
+                <button onClick={() => send()} disabled={busy} className="px-3 py-2 rounded-lg bg-cyan-500/20 border border-cyan-400/30 text-cyan-200 hover:bg-cyan-500/30 disabled:opacity-50"><Send size={16}/></button>
+                <button onClick={toggleMic} className={`px-3 py-2 rounded-lg border ${listening ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-200' : 'bg-white/5 border-[var(--border-soft)] text-[var(--muted)] hover:text-cyan-200'}`} title="Voice command"><Mic size={16}/></button>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {quick.map((q) => (
+                  <button key={q.label} onClick={() => send(q.command)} className="text-xs px-2.5 py-1.5 rounded-full border border-cyan-400/20 text-cyan-100/90 bg-cyan-500/5 hover:bg-cyan-500/10">{q.label}</button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1.15fr_.85fr] gap-4">
+      <div className={`grid grid-cols-1 xl:grid-cols-[1.15fr_.85fr] gap-4 ${resting ? 'pointer-events-none opacity-40 select-none' : ''}`}>
         <section className="space-y-4">
           <div id="approval-queue" className="glass rounded-2xl p-4">
             <div className="flex items-center justify-between mb-3">

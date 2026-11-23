@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../services/api'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
-import { Mic, MicOff, Volume2, Square, Send, Radio, Trash2 } from 'lucide-react'
+import { ExternalLink, Mic, MicOff, Volume2, Square, Send, Radio, Trash2 } from 'lucide-react'
 
 const ORB_STATES: Record<string, string> = {
   idle: 'Ready when you are',
@@ -111,8 +111,11 @@ export default function VoiceAgent() {
       const reply = res?.spoken || res?.reply || res?.error || 'I did not catch that.'
       dispatch({
         type: 'voice/turnEnd',
-        payload: { id, assistant: reply, intent: res?.intent, needsApproval: !!res?.requires_approval },
+        payload: { id, assistant: reply, intent: res?.intent, needsApproval: !!res?.requires_approval, openUrl: res?.open_url, openLabel: res?.open_label },
       })
+      if (res?.open_url) {
+        try { window.open(res.open_url, '_blank', 'noopener,noreferrer') } catch { /* popup blocked */ }
+      }
       if (res?.error && !res?.reply) dispatch({ type: 'voice/error', payload: res.error })
       await speak(reply)
     } catch (e: any) {
@@ -323,6 +326,7 @@ export default function VoiceAgent() {
                 <div className="flex justify-start">
                   <div className="max-w-[90%] rounded-2xl rounded-bl-md bg-black/25 border border-[var(--border-soft)] px-3 py-2 text-sm text-slate-200">
                     {t.assistant || <span className="text-[var(--muted)]">Thinking...</span>}
+                    {t.openUrl && <a href={t.openUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-cyan-400/30 bg-cyan-500/10 px-3 py-1.5 text-xs text-cyan-200 hover:bg-cyan-500/20"><ExternalLink size={13}/> {t.openLabel || 'Open link'}</a>}
                     {t.needsApproval && <div className="mt-2 text-[11px] text-amber-300">Needs your approval in Approvals.</div>}
                   </div>
                 </div>
