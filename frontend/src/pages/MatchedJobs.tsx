@@ -36,6 +36,7 @@ export default function MatchedJobs() {
   const [min, setMin] = useState(0)
   const [q, setQ] = useState('')
   const [debouncedQ, setDebouncedQ] = useState('')
+  const [location, setLocation] = useState('Hyderabad, India')
   const [source, setSource] = useState('')
   const [sort, setSort] = useState('score')
   const [remoteOnly, setRemoteOnly] = useState(false)
@@ -48,6 +49,8 @@ export default function MatchedJobs() {
   const [busyId, setBusyId] = useState<number | null>(null)
   const [expanded, setExpanded] = useState<number | null>(null)
   const [weights, setWeights] = useState<any>(null)
+  const [apifyEnabled, setApifyEnabled] = useState(false)
+  const [apifyBusy, setApifyBusy] = useState(false)
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQ(q), 300)
@@ -88,6 +91,12 @@ export default function MatchedJobs() {
     return () => { active = false }
   }, [reloadKey])
 
+  useEffect(() => {
+    api.get<any>('/jobs/apify/status')
+      .then(r => setApifyEnabled(Boolean(r?.enabled)))
+      .catch(() => setApifyEnabled(false))
+  }, [])
+
   function reload() { setReloadKey(k => k + 1) }
 
   async function prepare(jobId: number) {
@@ -119,6 +128,22 @@ export default function MatchedJobs() {
       reload()
     } catch (e: any) { setMsg(e?.message || 'Feedback failed') }
     finally { setBusyId(null) }
+  }
+
+  async function findWithApify() {
+    const query = q.trim()
+    if (!query || !apifyEnabled || apifyBusy) return
+    if (!window.confirm(`Deep search Apify for "${query}" in ${location || 'India'}? This uses Apify credits.`)) return
+    setApifyBusy(true); setMsg(null)
+    try {
+      const res = await api.post<any>('/jobs/apify', { query, location: location || 'Hyderabad, India', limit: 15 })
+      if (!res?.ok) { setMsg(res?.error || 'Apify search failed.'); return }
+      setMsg(res.jobs?.length
+        ? `Apify found ${res.jobs.length} roles for "${query}" and added them to the board.`
+        : `Apify found no relevant roles for "${query}".`)
+      reload()
+    } catch (e: any) { setMsg(e?.message || 'Apify search failed.') }
+    finally { setApifyBusy(false) }
   }
 
   function clearFilters() {
@@ -170,27 +195,36 @@ export default function MatchedJobs() {
       )}
 
       <div className="glass rounded-2xl p-4 space-y-3">
-        <div className="grid gap-2 md:grid-cols-[1fr_auto_auto_auto]">
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-[1fr_1fr_auto_auto_auto_auto]">
           <div className="relative">
             <Search size={16} className="pointer-events-none absolute left-3 top-3 text-slate-400" />
             <input
               value={q}
               onChange={e => setQ(e.target.value)}
-              placeholder="Search title, company, location or skill..."
+              placeholder="Search or scrape a role (e.g. Python Backend Developer)..."
               className="w-full rounded-lg py-2.5 pl-9 pr-3 text-sm"
             />
           </div>
+          <input
+            value={location}
+            onChange={e => setLocation(e.target.value)}
+            placeholder="Location for Apify search"
+            className="rounded-lg border border-[var(--border-soft)] bg-black/30 px-3 py-2.5 text-sm"
+          />
+          <button onClick={findWithApify} disabled={!apifyEnabled || apifyBusy || !q.trim()} title={apifyEnabled ? 'Scrape live jobs from Indeed via Apify and add them to this board' : 'Set APIFY_API_KEY to enable'} className="rounded-lg bg-violet-500/20 border border-violet-400/30 px-4 py-2.5 text-sm text-violet-100 hover:bg-violet-500/30 disabled:opacity-40">
+            {apifyBusy ? 'Scraping...' : 'Find with Apify'}
+          </button>
           <select value={min} onChange={e => setMin(Number(e.target.value))} className="rounded-lg bg-black/30 border border-[var(--border-soft)] px-3 py-2.5 text-sm" aria-label="Minimum score">
-            {[0, 50, 60, 70, 80, 90].map(v => <option key={v} value={v}>Min score: {v}%</option>)}
+            {[0, 50, 60, 70, 80, 90].map(v => <option key={v} value={v}>Min: {v}%</option>)}
           </select>
           <select value={source} onChange={e => setSource(e.target.value)} className="rounded-lg bg-black/30 border border-[var(--border-soft)] px-3 py-2.5 text-sm" aria-label="Source">
             <option value="">All sources</option>
             {sources.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
           <select value={sort} onChange={e => setSort(e.target.value)} className="rounded-lg bg-black/30 border border-[var(--border-soft)] px-3 py-2.5 text-sm" aria-label="Sort">
-            <option value="score">Sort: Best match</option>
-            <option value="newest">Sort: Newest</option>
-            <option value="company">Sort: Company A-Z</option>
+            <option value="score">Best match</option>
+            <option value="newest">Newest</option>
+            <option value="company">Company A-Z</option>
           </select>
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[var(--muted)]">
@@ -207,6 +241,9 @@ export default function MatchedJobs() {
             <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> Refresh
           </button>
         </div>
+        <p className="text-[11px] text-[var(--muted)]">
+          Type a role to filter the board, then use <span className="text-violet-200">Find with Apify</span> to scrape fresh Indeed jobs for that role and location.
+        </p>
       </div>
 
       {jobs.length > 0 && (
