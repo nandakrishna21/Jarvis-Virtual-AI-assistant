@@ -193,9 +193,11 @@ export default function VoiceAgent() {
       }
     }
     rec.onerror = (e: any) => {
-      if (e?.error === 'not-allowed') dispatch({ type: 'voice/error', payload: 'Microphone permission denied. Allow it in your browser and try again.' })
-      if (e?.error === 'no-speech' || e?.error === 'aborted') return
-      dispatch({ type: 'voice/error', payload: `Speech recognition error: ${e?.error}` })
+      const err = e?.error
+      if (err === 'not-allowed' || err === 'service-not-allowed') { dispatch({ type: 'voice/error', payload: 'Microphone permission denied. Allow mic access in browser site settings.' }); shouldListenRef.current = false; return }
+      if (err === 'no-speech' || err === 'aborted') return
+      if (err === 'network') { dispatch({ type: 'voice/error', payload: 'Speech recognition network error. Check internet and try again.' }); return }
+      dispatch({ type: 'voice/error', payload: `Speech recognition error: ${err || 'unknown'}` })
     }
     rec.onend = () => {
       if (silenceRef.current) { window.clearTimeout(silenceRef.current); silenceRef.current = null }
@@ -228,7 +230,19 @@ export default function VoiceAgent() {
     dispatch({ type: 'voice/interim', payload: '' })
   }
 
-  function toggleListening() {
+  async function ensureMic() {
+    if (!navigator.mediaDevices?.getUserMedia) return true
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      stream.getTracks().forEach(t => t.stop())
+      return true
+    } catch (e: any) {
+      dispatch({ type: 'voice/error', payload: 'Microphone access was blocked. Allow mic permission for this site and try again.' })
+      return false
+    }
+  }
+
+  async function toggleListening() {
     if (state === 'listening') {
       stopRecognition()
       return
@@ -239,6 +253,8 @@ export default function VoiceAgent() {
     shouldListenRef.current = true
     lastSentRef.current = ''
     pendingTextRef.current = ''
+    const ok = await ensureMic()
+    if (!ok) { shouldListenRef.current = false; return }
     const started = startRecognition()
     if (!started) shouldListenRef.current = false
   }
