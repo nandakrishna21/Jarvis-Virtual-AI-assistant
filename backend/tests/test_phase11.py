@@ -538,7 +538,12 @@ def test_auth_guard_blocks_mutations_when_key_set():
 
 
 def test_auth_guard_leaves_reads_open():
-    """Direct read endpoints stay open, but /api reads require the key (tunnel safety)."""
+    """With a key set, data reads need the key; the app shell stays open.
+
+    The app is reachable from a phone over LAN/Tailscale, so every API route
+    (prefixed or not) is protected. Only /health and SPA page loads (HTML
+    navigation) stay public so the unlock screen can render.
+    """
     original = auth_service.settings.api_key
     original_prefixed = getattr(auth_service.settings, "jarvis_api_key", "")
     try:
@@ -546,9 +551,11 @@ def test_auth_guard_leaves_reads_open():
         if hasattr(auth_service.settings, "jarvis_api_key"):
             auth_service.settings.jarvis_api_key = ""
         assert client.get("/health").status_code == 200
-        assert client.get("/jobs").status_code == 200
+        assert client.get("/jobs").status_code == 401
         assert client.get("/api/jobs").status_code == 401
         assert client.get("/api/jobs", headers={"X-API-Key": "p11-secret"}).status_code == 200
+        page = client.get("/voice", headers={"Accept": "text/html"})
+        assert page.status_code == 200
     finally:
         auth_service.settings.api_key = original
         if hasattr(auth_service.settings, "jarvis_api_key"):

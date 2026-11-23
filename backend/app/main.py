@@ -89,23 +89,59 @@ async def api_prefix_stripper(request, call_next):
     return await call_next(request)
 
 
+_PUBLIC_PATHS = {"/health"}
+# Frontend routes that also exist as API paths. A browser navigation to them
+# must still load the app shell; the data calls behind them stay key-protected.
+_SPA_PATHS = {
+    "/", "/assistant", "/jobs", "/jobs/all", "/matched", "/resume", "/resume-generator",
+    "/voice", "/emails", "/documents", "/applications", "/applications/legacy",
+    "/interviews", "/automation", "/analytics", "/settings",
+}
+_api_prefixes: list[tuple[str, str]] = []
+
+
+def _refresh_api_prefixes() -> None:
+    """Track every registered API route so direct (non /api) calls are protected too."""
+    global _api_prefixes
+    entries: list[tuple[str, str]] = []
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        if not path or path == "/":
+            continue
+        if path in _PUBLIC_PATHS:
+            continue
+        if path.startswith("/{") and "{" in path:
+            static = path.split("{")[0].rstrip("/")
+            if not static:
+                continue
+            entries.append((path, static + "/"))
+        else:
+            entries.append((path, path + "/"))
+    _api_prefixes = entries
+
+
+def _is_api_path(path: str) -> bool:
+    if path.startswith("/api/") or path == "/api":
+        return True
+    for exact, prefix in _api_prefixes:
+        if path == exact or path.startswith(prefix):
+            return True
+    return False
+
+
 @app.middleware("http")
 async def api_key_guard(request, call_next):
     """Require the local API key for API calls when one is configured.
 
     The app shell and static files stay open so the unlock screen can load.
-    If a key is configured, every /api request needs it (important when the
-    app is exposed through a tunnel). In LAN mode, starting without a key is
-    refused as an extra safety net.
+    Every API route needs the key (important when the app is exposed through
+    LAN or a Tailscale tunnel), including direct calls that skip the /api prefix.
     """
-    lan = bool(getattr(settings, "jarvis_lan_mode", False))
     path = request.scope.get("path", "")
-    is_api = path.startswith("/api/") or path == "/api"
+    is_api = _is_api_path(path)
     mutating = request.method in ("POST", "PUT", "PATCH", "DELETE")
-    # If a key is set, protect API calls (and direct mutating calls). Leave the
-    # app shell/static files open so the unlock screen can load. If no key is set,
-    # nothing is blocked - convenient for home Wi-Fi, but do not expose a public
-    # tunnel without setting JARVIS_API_KEY.
+    if not mutating and path in _SPA_PATHS and "text/html" in (request.headers.get("accept") or ""):
+        is_api = False
     if auth_service.enabled() and (is_api or mutating):
         provided = request.headers.get("x-api-key") or request.query_params.get("api_key")
         if not auth_service.check(provided):
@@ -865,3 +901,5 @@ if FRONTEND_DIST.exists():
         if index.exists():
             return FileResponse(str(index), headers={"Cache-Control": "no-cache"})
         return JSONResponse(status_code=404, content={"error": "frontend build not found"})
+
+_refresh_api_prefixes()
