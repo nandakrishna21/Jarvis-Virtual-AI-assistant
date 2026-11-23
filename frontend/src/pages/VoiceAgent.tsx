@@ -58,11 +58,13 @@ export default function VoiceAgent() {
   const [captured, setCaptured] = useState('')
   const [autoSpeak, setAutoSpeak] = useState(() => localStorage.getItem('jarvis.voice.autoSpeak') !== '0')
   const [showSettings, setShowSettings] = useState(false)
+  const [wakeFlash, setWakeFlash] = useState(false)
   const isIOS = typeof navigator !== 'undefined' && /iphone|ipad|ipod/i.test(navigator.userAgent)
 
   const recognitionRef = useRef<any>(null)
   const speakingRef = useRef(false)
   const shouldListenRef = useRef(false)
+  const recActiveRef = useRef(false)
   const continuousRef = useRef(continuous)
   const wakeWordRef = useRef(wakeWord)
   const autoSpeakRef = useRef(autoSpeak)
@@ -145,31 +147,26 @@ export default function VoiceAgent() {
   function submitVoice(text: string) {
     const clean = text.trim()
     if (!clean || clean === lastSentRef.current) return
+    if (wakeWordRef.current && !/\b(jarvis|javis|jarvus)\b/i.test(clean)) {
+      pendingTextRef.current = ''; setCaptured(''); dispatch({ type: 'voice/interim', payload: '' })
+      if (shouldListenRef.current && continuousRef.current) safeRestart(250)
+      return
+    }
     if (silenceRef.current) { window.clearTimeout(silenceRef.current); silenceRef.current = null }
     pendingTextRef.current = ''; lastSentRef.current = clean
     window.setTimeout(() => { if (lastSentRef.current === clean) lastSentRef.current = '' }, 3000)
     dispatch({ type: 'voice/interim', payload: '' }); setCaptured('')
-    if (wakeWordRef.current) {
-      const lower = clean.toLowerCase()
-      if (!lower.includes('jarvis')) {
-        if (shouldListenRef.current && continuousRef.current) setTimeout(() => { try { recognitionRef.current?.start() } catch {} }, 200)
-        return
-      }
-      statusRef.current = 'thinking'; dispatch({ type: 'voice/status', payload: 'thinking' })
-      try { recognitionRef.current?.stop() } catch {}
-      const stripped = lower.replace(/^.*?jarvis\s*/, '').trim()
-      void ask(stripped || clean); return
-    }
+    const command = wakeWordRef.current ? clean.replace(/^.*?\b(jarvis|javis|jarvus)\b[\s,.:!-]*/i, '').trim() || clean : clean
     statusRef.current = 'thinking'; dispatch({ type: 'voice/status', payload: 'thinking' })
     try { recognitionRef.current?.stop() } catch {}
-    void ask(clean)
+    void ask(command)
   }
 
   function safeRestart(delay = 300) {
     if (!shouldListenRef.current || !continuousRef.current) return
     window.setTimeout(() => {
       if (!shouldListenRef.current || !continuousRef.current) return
-      if (speakingRef.current || statusRef.current === 'thinking') return
+      if (speakingRef.current || statusRef.current === 'thinking' || recActiveRef.current) return
       try { recognitionRef.current?.abort?.() } catch {}
       try { recognitionRef.current?.stop?.() } catch {}
       recognitionRef.current = null
@@ -184,6 +181,7 @@ export default function VoiceAgent() {
     if (recognitionRef.current) { try { recognitionRef.current.onend = null; recognitionRef.current.abort?.() } catch {} recognitionRef.current = null }
     const rec = new SR()
     rec.continuous = !isIOS; rec.interimResults = true; rec.lang = 'en-US'; rec.maxAlternatives = 1
+    rec.onstart = () => { recActiveRef.current = true }
     rec.onresult = (event: any) => {
       let finalText = ''; let interimText = ''
       for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -194,19 +192,31 @@ export default function VoiceAgent() {
       const combined = `${pendingTextRef.current} ${interimText}`.replace(/\s+/g, ' ').trim()
       setCaptured(combined); dispatch({ type: 'voice/interim', payload: combined.slice(-200) })
       if (speakingRef.current && combined) { window.speechSynthesis?.cancel(); speakingRef.current = false }
-      if (combined) {
+
+      const wakeEnabled = wakeWordRef.current
+      const hasWake = !wakeEnabled || /\b(jarvis|javis|jarvus)\b/i.test(combined)
+      if (wakeEnabled && /\b(jarvis|javis|jarvus)\b/i.test(interimText || finalText)) { setWakeFlash(true); window.setTimeout(() => setWakeFlash(false), 900) }
+      if (combined && hasWake) {
         if (silenceRef.current) window.clearTimeout(silenceRef.current)
         silenceRef.current = window.setTimeout(() => submitVoice(pendingTextRef.current.trim() || combined), silenceMsRef.current)
+      } else if (combined && wakeEnabled && !hasWake) {
+        if (silenceRef.current) { window.clearTimeout(silenceRef.current); silenceRef.current = null }
+        // In wake-word mode, ignore background speech but keep mic alive.
+        if (combined.length > 80) { pendingTextRef.current = ''; setCaptured(''); dispatch({ type: 'voice/interim', payload: '' }) }
       }
     }
     rec.onerror = (e: any) => {
       const err = e?.error
-      if (err === 'not-allowed' || err === 'service-not-allowed') { dispatch({ type: 'voice/error', payload: 'Microphone permission denied. Allow mic access in browser site settings.' }); shouldListenRef.current = false; return }
-      if (err === 'no-speech' || err === 'aborted') return
-      if (err === 'network') { dispatch({ type: 'voice/error', payload: 'Speech recognition network error. Check internet and retry.' }); return }
+      if (err === 'not-allowed' || err === 'service-not-allowed') { dispatch({ type: 'voice/error', payload: 'Microphone permission denied. Allow mic access in browser site settings.' }); shouldListenRef.current = false; recActiveRef.current = false; return }
+      if (err === 'aborted') { recActiveRef.current = false; return }
+      if (err === 'no-speech') { recActiveRef.current = false; if (shouldListenRef.current && continuousRef.current) safeRestart(250); return }
+      if (err === 'network') { dispatch({ type: 'voice/error', payload: 'Speech recognition network error. Check internet and retry.' }); recActiveRef.current = false; if (shouldListenRef.current && continuousRef.current) safeRestart(1200); return }
       dispatch({ type: 'voice/error', payload: `Speech recognition error: ${err || 'unknown'}` })
+      recActiveRef.current = false
+      if (shouldListenRef.current && continuousRef.current) safeRestart(800)
     }
     rec.onend = () => {
+      recActiveRef.current = false
       if (silenceRef.current) { window.clearTimeout(silenceRef.current); silenceRef.current = null }
       const pending = pendingTextRef.current.trim()
       if (pending && statusRef.current !== 'thinking' && statusRef.current !== 'speaking') { submitVoice(pending); return }
@@ -227,8 +237,10 @@ export default function VoiceAgent() {
 
   function stopRecognition() {
     shouldListenRef.current = false
+    recActiveRef.current = false
     if (silenceRef.current) { window.clearTimeout(silenceRef.current); silenceRef.current = null }
     pendingTextRef.current = ''; setCaptured('')
+    try { if (recognitionRef.current) recognitionRef.current.onend = null as any; recognitionRef.current?.abort?.() } catch {}
     try { recognitionRef.current?.stop() } catch {}; recognitionRef.current = null
     dispatch({ type: 'voice/status', payload: 'idle' }); dispatch({ type: 'voice/interim', payload: '' })
   }
@@ -289,14 +301,14 @@ export default function VoiceAgent() {
       <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
         <div className="rounded-3xl border border-white/10 bg-black/20 p-4 sm:p-5 space-y-4">
           <div className="rounded-2xl border border-white/10 bg-[radial-gradient(ellipse_at_top,rgba(34,211,238,0.12),transparent_60%)] p-5 text-center">
-            <div className={`mx-auto relative h-36 w-36 sm:h-44 sm:w-44 rounded-full border-4 flex items-center justify-center ${state === 'listening' ? 'border-red-400/60 bg-red-500/10 shadow-[0_0_40px_rgba(251,113,133,0.2)]' : state === 'thinking' ? 'border-amber-400/60 bg-amber-500/10 shadow-[0_0_40px_rgba(251,191,36,0.15)]' : state === 'speaking' ? 'border-cyan-400/60 bg-cyan-500/10 shadow-[0_0_40px_rgba(34,211,238,0.2)]' : 'border-cyan-400/20 bg-cyan-500/5'}`}>
+            <div className={`mx-auto relative h-36 w-36 sm:h-44 sm:w-44 rounded-full border-4 flex items-center justify-center transition-all ${wakeFlash ? 'border-emerald-400/80 bg-emerald-500/15 shadow-[0_0_50px_rgba(52,211,153,0.25)]' : state === 'listening' ? 'border-red-400/60 bg-red-500/10 shadow-[0_0_40px_rgba(251,113,133,0.2)]' : state === 'thinking' ? 'border-amber-400/60 bg-amber-500/10 shadow-[0_0_40px_rgba(251,191,36,0.15)]' : state === 'speaking' ? 'border-cyan-400/60 bg-cyan-500/10 shadow-[0_0_40px_rgba(34,211,238,0.2)]' : 'border-cyan-400/20 bg-cyan-500/5'}`}>
               {(state === 'listening' || state === 'thinking' || state === 'speaking') && <div className="absolute inset-[-8px] rounded-full border border-white/10 animate-ping" />}
               <div>
                 <div className="text-[10px] uppercase tracking-[0.3em] text-slate-400">{state}</div>
                 <div className="mt-2 text-lg font-medium text-white">{status.label}</div>
               </div>
             </div>
-            <p className="mt-4 text-sm text-slate-300 min-h-[40px]">{state === 'listening' ? (captured ? `“${captured}”` : 'Listening… speak your command.') : state === 'thinking' ? 'Processing your command…' : state === 'speaking' ? (lastAssistant?.slice(0, 110) || 'Speaking…') : 'Ready for your next command.'}</p>
+            <p className="mt-4 text-sm text-slate-300 min-h-[40px]">{wakeFlash ? 'Wake word detected.' : state === 'listening' ? (captured ? `“${captured}”` : wakeWord ? 'Say “JARVIS…” and your command.' : 'Listening… speak your command.') : state === 'thinking' ? 'Processing your command…' : state === 'speaking' ? (lastAssistant?.slice(0, 110) || 'Speaking…') : 'Ready for your next command.'}</p>
             <div className="mt-4 flex gap-1 justify-center">{Array.from({ length: 12 }).map((_, i) => <span key={i} className={`w-1.5 rounded-full ${state === 'idle' ? 'h-2 bg-white/10' : 'bg-cyan-400/70 animate-pulse'}`} style={{ height: state === 'idle' ? 8 : 8 + (i % 5) * 5, animationDelay: `${i * 60}ms` }} />)}</div>
           </div>
 
