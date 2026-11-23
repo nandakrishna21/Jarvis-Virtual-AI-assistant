@@ -61,6 +61,7 @@ export default function VoiceAgent() {
   const wakeWord = useAppSelector((s) => s.voice.wakeWord)
   const error = useAppSelector((s) => s.voice.error)
   const [textInput, setTextInput] = useState('')
+  const [silenceMs, setSilenceMs] = useState(3000)
   const isIOS = typeof navigator !== 'undefined' && /iphone|ipad|ipod/i.test(navigator.userAgent)
 
   const recognitionRef = useRef<any>(null)
@@ -75,6 +76,8 @@ export default function VoiceAgent() {
   const lastSentRef = useRef('')
   const statusRef = useRef(state)
   const logRef = useRef<HTMLDivElement | null>(null)
+  const silenceMsRef = useRef(3000)
+  useEffect(() => { silenceMsRef.current = silenceMs }, [silenceMs])
   useEffect(() => { statusRef.current = state }, [state])
   useEffect(() => { logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: 'smooth' }) }, [turns, interim, state])
 
@@ -223,16 +226,18 @@ export default function VoiceAgent() {
         if (event.results[i].isFinal) finalText += transcript + ' '
         else interimText += transcript
       }
-      const combined = `${pendingTextRef.current} ${finalText} ${interimText}`.replace(/\s+/g, ' ').trim()
-      dispatch({ type: 'voice/interim', payload: combined.slice(-140) })
-      if (speakingRef.current && (interimText.trim() || finalText.trim())) {
+      if (finalText.trim()) {
+        pendingTextRef.current = `${pendingTextRef.current} ${finalText}`.replace(/\s+/g, ' ').trim()
+      }
+      const combined = `${pendingTextRef.current} ${interimText}`.replace(/\s+/g, ' ').trim()
+      dispatch({ type: 'voice/interim', payload: combined.slice(-180) })
+      if (speakingRef.current && combined) {
         window.speechSynthesis?.cancel()
         speakingRef.current = false
       }
-      if (finalText.trim()) {
-        pendingTextRef.current = `${pendingTextRef.current} ${finalText}`.replace(/\s+/g, ' ').trim()
+      if (combined) {
         if (silenceRef.current) window.clearTimeout(silenceRef.current)
-        silenceRef.current = window.setTimeout(() => submitVoice(pendingTextRef.current), 700)
+        silenceRef.current = window.setTimeout(() => submitVoice(combined), silenceMsRef.current)
       }
     }
     rec.onerror = (e: any) => {
@@ -244,12 +249,16 @@ export default function VoiceAgent() {
     }
     rec.onend = () => {
       if (silenceRef.current) { window.clearTimeout(silenceRef.current); silenceRef.current = null }
-      if (pendingTextRef.current.trim() && statusRef.current !== 'thinking' && statusRef.current !== 'speaking') {
-        submitVoice(pendingTextRef.current)
+      const pending = pendingTextRef.current.trim()
+      if (pending && statusRef.current !== 'thinking' && statusRef.current !== 'speaking') {
+        submitVoice(pending)
         return
       }
       if (shouldListenRef.current && continuousRef.current && !speakingRef.current && statusRef.current !== 'thinking') {
-        setTimeout(() => { try { rec.start() } catch { /* already running */ } }, 200)
+        setTimeout(() => { try { rec.start() } catch { /* already running */ } }, 250)
+      } else if (shouldListenRef.current && !continuousRef.current) {
+        dispatch({ type: 'voice/status', payload: 'idle' })
+        shouldListenRef.current = false
       }
     }
     try {
@@ -344,6 +353,7 @@ export default function VoiceAgent() {
             <div className={`rounded-full border px-3 py-1.5 ${state === 'listening' ? 'border-red-400/40 bg-red-500/10 text-red-200' : state === 'thinking' ? 'border-amber-400/40 bg-amber-500/10 text-amber-200' : state === 'speaking' ? 'border-cyan-400/40 bg-cyan-500/10 text-cyan-200' : 'border-white/10 bg-white/5 text-slate-300'}`}>{ORB_STATES[state]}</div>
             <label className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-slate-300 cursor-pointer"><input type="checkbox" checked={continuous} onChange={(e) => dispatch({ type: 'voice/continuous', payload: e.target.checked })} />Hands-free</label>
             <label className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-slate-300 cursor-pointer"><input type="checkbox" checked={wakeWord} onChange={(e) => dispatch({ type: 'voice/wakeWord', payload: e.target.checked })} />"JARVIS" wake word</label>
+            <label className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-slate-300">Auto-send<select value={silenceMs} onChange={e=>setSilenceMs(Number(e.target.value))} className="bg-transparent text-cyan-200 outline-none"><option value={1500}>1.5s</option><option value={2000}>2s</option><option value={3000}>3s</option><option value={4000}>4s</option></select></label>
           </div>
         </div>
         {error && <div className="relative mt-4 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</div>}
@@ -363,7 +373,7 @@ export default function VoiceAgent() {
 
             <div className="mt-5 w-full rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-left">
               <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-slate-400"><span>{state === 'listening' ? 'Live transcript' : 'Assistant status'}</span><span className={state === 'listening' ? 'text-red-300' : state === 'thinking' ? 'text-amber-300' : state === 'speaking' ? 'text-cyan-300' : 'text-slate-400'}>{state}</span></div>
-              <div className="mt-2 min-h-[56px] text-sm leading-relaxed text-slate-200">{interim ? <span className="text-cyan-50">“{interim}”</span> : (lastAssistant || 'Tap Start talking, or choose a quick command.')}</div>
+              <div className="mt-2 min-h-[56px] text-sm leading-relaxed text-slate-200">{interim ? <span className="text-cyan-50">“{interim}”</span> : (lastAssistant || 'Tap Start talking, then speak. When you pause, JARVIS will auto-send your command.')}</div>
               <div className="mt-3 flex gap-1">{[0,1,2,3,4,5,6].map(i => <span key={i} className={`h-1.5 flex-1 rounded-full ${state === 'listening' ? 'bg-red-400/70 animate-pulse' : state === 'thinking' ? 'bg-amber-400/60 animate-pulse' : state === 'speaking' ? 'bg-cyan-400/70 animate-pulse' : 'bg-white/10'}`} style={{animationDelay:`${i*90}ms`}} />)}</div>
             </div>
 
@@ -408,7 +418,7 @@ export default function VoiceAgent() {
                 </div>
               </div>
             ))}
-            {interim && <div className="flex justify-end"><div className="max-w-[85%] rounded-2xl rounded-br-md border border-dashed border-cyan-400/30 bg-cyan-500/5 px-4 py-2.5 text-sm text-cyan-100/80">“{interim}”</div></div>}
+            {interim && <div className="flex justify-end"><div className="max-w-[85%] rounded-2xl rounded-br-md border border-dashed border-cyan-400/30 bg-cyan-500/5 px-4 py-2.5 text-sm text-cyan-100/80"><div className="text-[10px] uppercase tracking-wide text-cyan-300/70 mb-1">Live transcript</div>“{interim}”</div></div>}
           </div>
 
           <div className="border-t border-white/10 p-4 sm:p-5">
