@@ -42,53 +42,72 @@ def extract_details(subject: str, body: str) -> dict:
     dates = DATE_PATTERN.findall(text)
     return {"company": company, "job_role": role, "dates": dates[:5]}
 
-def fetch_and_store(max_results: int = 25, query: str = "newer_than:14d") -> list[dict]:
+def fetch_and_store(max_results: int = 25, query: str = "newer_than:14d") -> dict:
     from app.integrations import gmail_client
     service = gmail_client.build_service(gmail_client.SCOPES_READONLY)
-    listing = service.users().messages().list(userId="me", maxResults=max_results, q=query).execute()
+    max_results = max(1, min(int(max_results or 25), 500))
+    query = (query or "").strip()
     db = SessionLocal()
     out = []
     recruiter_new = []
+    fetched = 0
+    page_token = None
     try:
-        for item in listing.get("messages", []):
-            msg = service.users().messages().get(userId="me", id=item["id"], format="full").execute()
-            headers = {h["name"].lower(): h["value"] for h in msg.get("payload", {}).get("headers", [])}
-            body = _extract_body(msg.get("payload", {}))
-            subject = headers.get("subject", "")
-            snippet = msg.get("snippet", "")
-            sender = headers.get("from", "")
-            category = classify(subject, snippet)
-            details = extract_details(subject, body)
-            row = db.query(Email).filter(Email.gmail_id == item["id"]).first()
-            is_new = row is None
-            if not row:
-                row = Email(gmail_id=item["id"])
-                db.add(row)
-            row.sender = sender; row.subject = subject; row.snippet = snippet; row.body = body[:20000]
-            row.received_at = headers.get("date", "")
-            row.category = category
-            row.company = details["company"]; row.job_role = details["job_role"]
-            row.important_details = json.dumps({"dates": details["dates"]})
-            db.flush()
-            if is_new and category in ("recruiter", "interview", "assessment"):
-                recruiter_new.append(f"{category}: {subject} ({details['company'] or sender})")
-            out.append({"id": row.id, "sender": sender, "company": row.company, "subject": subject,
-                        "received_at": row.received_at, "job_role": row.job_role,
-                        "category": category, "important_details": details["dates"], "body": body[:1500]})
+        while fetched < max_results:
+            batch = min(100, max_results - fetched)
+            req = {"userId": "me", "maxResults": batch}
+            if query:
+                req["q"] = query
+            if page_token:
+                req["pageToken"] = page_token
+            listing = service.users().messages().list(**req).execute()
+            items = listing.get("messages", [])
+            if not items:
+                break
+            for item in items:
+                msg = service.users().messages().get(userId="me", id=item["id"], format="full").execute()
+                headers = {h["name"].lower(): h["value"] for h in msg.get("payload", {}).get("headers", [])}
+                body = _extract_body(msg.get("payload", {}))
+                subject = headers.get("subject", "")
+                snippet = msg.get("snippet", "")
+                sender = headers.get("from", "")
+                category = classify(subject, snippet)
+                details = extract_details(subject, body)
+                row = db.query(Email).filter(Email.gmail_id == item["id"]).first()
+                is_new = row is None
+                if not row:
+                    row = Email(gmail_id=item["id"])
+                    db.add(row)
+                row.sender = sender; row.subject = subject; row.snippet = snippet; row.body = body[:20000]
+                row.received_at = headers.get("date", "")
+                row.category = category
+                row.company = details["company"]; row.job_role = details["job_role"]
+                row.important_details = json.dumps({"dates": details["dates"]})
+                db.flush()
+                if is_new and category in ("recruiter", "interview", "assessment"):
+                    recruiter_new.append(f"{category}: {subject} ({details['company'] or sender})")
+                out.append({"id": row.id, "sender": sender, "company": row.company, "subject": subject,
+                            "received_at": row.received_at, "job_role": row.job_role,
+                            "category": category, "important_details": details["dates"], "snippet": snippet})
+                fetched += 1
+                if fetched >= max_results:
+                    break
+            page_token = listing.get("nextPageToken")
+            if not page_token:
+                break
         db.commit()
         if recruiter_new:
             from app.services.notifications import notify_safe
-
             notify_safe(
                 db,
                 f"{len(recruiter_new)} new recruiter/interview email(s)",
                 "\n".join(recruiter_new[:10]),
                 "info",
-                "/",
+                "/emails",
             )
     finally:
         db.close()
-    return out
+    return {"ok": True, "count": len(out), "emails": out, "query": query, "has_more": bool(page_token)}
 
 def _extract_body(payload: dict) -> str:
     if not payload:

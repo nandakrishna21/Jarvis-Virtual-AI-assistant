@@ -742,8 +742,8 @@ async def approval_reject(approval_id: int):
     return app_service.decide(approval_id, False)
 
 class EmailFetch(BaseModel):
-    max_results: int = 25
-    query: str = "newer_than:14d"
+    max_results: int = Field(25, ge=1, le=500)
+    query: str = "newer_than:30d"
 
 class DraftReq(BaseModel):
     email_id: int
@@ -791,11 +791,14 @@ async def gmail_account():
 
 
 @app.get("/emails")
-async def emails_list(db: Session = Depends(get_db), category: str | None = None, limit: int = 50):
-    q = db.query(Email)
-    if category:
-        q = q.filter(Email.category == category)
-    rows = q.order_by(Email.id.desc()).limit(min(limit, 100)).all()
+async def emails_list(db: Session = Depends(get_db), category: str | None = None, limit: int = 50, q: str = ""):
+    query = db.query(Email)
+    if category and category != "all":
+        query = query.filter(Email.category == category)
+    if q.strip():
+        needle = f"%{q.strip()}%"
+        query = query.filter((Email.subject.ilike(needle)) | (Email.sender.ilike(needle)) | (Email.snippet.ilike(needle)) | (Email.company.ilike(needle)))
+    rows = query.order_by(Email.id.desc()).limit(max(1, min(limit, 200))).all()
     return [{"id": r.id, "sender": r.sender, "company": r.company, "subject": r.subject,
              "received_at": r.received_at, "job_role": r.job_role, "category": r.category,
              "important_details": r.important_details, "snippet": r.snippet} for r in rows]
@@ -803,7 +806,7 @@ async def emails_list(db: Session = Depends(get_db), category: str | None = None
 @app.post("/emails/fetch")
 async def emails_fetch(req: EmailFetch):
     try:
-        return await gmail_service.fetch_and_store(req.max_results, req.query)
+        return await asyncio.to_thread(gmail_service.fetch_and_store, req.max_results, req.query)
     except Exception as e:
         return {"error": str(e), "hint": "Run scripts/gmail_auth.py (read-only) first; see docs/GMAIL_SETUP.md"}
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../services/api'
 import { Mail, RefreshCw, Download, Copy, ExternalLink, ShieldCheck, Inbox } from 'lucide-react'
 
-const CATEGORIES = ['all', 'recruiter', 'interview', 'assessment', 'job_alert', 'other']
+const CATEGORIES = ['all', 'recruiter', 'interview', 'assessment', 'job_alert', 'spam', 'other']
 
 type Account = { connected: boolean; email?: string|null; messages_total?: number; can_send?: boolean; hint?: string; error?: string }
 type EmailRow = { id: number; sender: string; company?: string; subject: string; received_at?: string; job_role?: string; category: string; snippet?: string }
@@ -19,6 +19,10 @@ export default function EmailAccess() {
   const [msg, setMsg] = useState<string|null>(null)
   const [busy, setBusy] = useState(false)
   const [query, setQuery] = useState('newer_than:30d')
+  const [maxResults, setMaxResults] = useState(100)
+  const [search, setSearch] = useState('')
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
 
   async function loadAll() {
     try {
@@ -26,7 +30,10 @@ export default function EmailAccess() {
       setAccount(a)
     } catch (e:any) { setMsg(e?.message || 'Could not read Gmail status') }
     try {
-      const list = await api.get<EmailRow[]>(`/emails?category=${category === 'all' ? '' : category}&limit=50`)
+      const params = new URLSearchParams({ limit: '200' })
+      if (category !== 'all') params.set('category', category)
+      if (search.trim()) params.set('q', search.trim())
+      const list = await api.get<EmailRow[]>(`/emails?${params.toString()}`)
       setEmails(Array.isArray(list) ? list : [])
     } catch {}
     try {
@@ -42,7 +49,10 @@ export default function EmailAccess() {
         const a = await api.get<Account>('/gmail/account'); if (on) setAccount(a)
       } catch {}
       try {
-        const list = await api.get<EmailRow[]>(`/emails?category=${category === 'all' ? '' : category}&limit=50`)
+        const params = new URLSearchParams({ limit: '200' })
+        if (category !== 'all') params.set('category', category)
+        if (search.trim()) params.set('q', search.trim())
+        const list = await api.get<EmailRow[]>(`/emails?${params.toString()}`)
         if (on) setEmails(Array.isArray(list) ? list : [])
       } catch {}
       try {
@@ -50,14 +60,21 @@ export default function EmailAccess() {
       } catch {}
     })()
     return () => { on = false }
-  }, [category])
+  }, [category, search])
+
+  function gmailQuery() {
+    let q = query.trim()
+    if (fromDate) q += ` after:${fromDate.replaceAll('-', '/')}`
+    if (toDate) q += ` before:${toDate.replaceAll('-', '/')}`
+    return q.trim() || 'newer_than:30d'
+  }
 
   async function fetchNow() {
     setBusy(true); setMsg(null)
     try {
-      const res = await api.post<any>('/emails/fetch', { max_results: 25, query })
-      if (res?.error) setMsg(`${res.error}${res.hint ? ' — ' + res.hint : ''}`)
-      else setMsg(`Fetched ${res?.length || 0} message(s) from your inbox.`)
+      const res = await api.post<any>('/emails/fetch', { max_results: maxResults, query: gmailQuery() })
+      if (res?.error) setMsg(`${res.error}${res.hint ? ' - ' + res.hint : ''}`)
+      else setMsg(`Fetched ${res?.count ?? res?.length ?? 0} message(s) from your inbox.`)
       await loadAll()
     } catch(e:any){ setMsg(e?.message||'Fetch failed') }
     finally { setBusy(false) }
@@ -97,17 +114,31 @@ export default function EmailAccess() {
 
   const connected = !!account?.connected
   const mailto = draft ? `mailto:${draft.recipient}?subject=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}` : ''
+  const visibleEmails = emails.filter(e => {
+    if (!fromDate && !toDate) return true
+    const t = Date.parse(e.received_at || '')
+    if (Number.isNaN(t)) return true
+    if (fromDate && t < Date.parse(fromDate)) return false
+    if (toDate && t > Date.parse(toDate) + 24*60*60*1000 - 1) return false
+    return true
+  })
 
   return (
     <div className="space-y-4">
       <div className="glass-strong rounded-2xl p-5">
         <div className="flex items-center gap-2 text-cyan-100"><Mail size={18}/><h1 className="text-lg font-semibold">Email Access</h1></div>
         <p className="text-sm text-[var(--muted)] mt-1">Connect your inbox so JARVIS can read recruiter emails and prepare replies. You keep the send button - JARVIS never sends mail on its own.</p>
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <button onClick={fetchNow} disabled={busy || !connected} className="px-4 py-2 rounded-lg bg-cyan-500/20 border border-cyan-400/30 text-cyan-100 hover:bg-cyan-500/30 disabled:opacity-50 inline-flex items-center gap-2"><Download size={14}/>{busy ? 'Working...' : 'Fetch inbox'}</button>
-          <button onClick={() => void loadAll()} className="px-3 py-2 rounded-lg border border-[var(--border-soft)] text-[var(--muted)] hover:text-cyan-200 inline-flex items-center gap-2"><RefreshCw size={14}/>Refresh</button>
-          <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="newer_than:30d" className="px-3 py-2 rounded-lg text-sm bg-black/20" />
+        <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-[auto_auto_1fr_160px_140px_140px]">
+          <button onClick={fetchNow} disabled={busy || !connected} className="px-4 py-2 rounded-lg bg-cyan-500/20 border border-cyan-400/30 text-cyan-100 hover:bg-cyan-500/30 disabled:opacity-50 inline-flex items-center justify-center gap-2"><Download size={14}/>{busy ? 'Working...' : 'Fetch inbox'}</button>
+          <button onClick={() => void loadAll()} className="px-3 py-2 rounded-lg border border-[var(--border-soft)] text-[var(--muted)] hover:text-cyan-200 inline-flex items-center justify-center gap-2"><RefreshCw size={14}/>Refresh</button>
+          <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Gmail query, e.g. newer_than:30d or in:inbox" className="px-3 py-2 rounded-lg text-sm bg-black/20 border border-[var(--border-soft)]" />
+          <select value={maxResults} onChange={e=>setMaxResults(Number(e.target.value))} className="px-3 py-2 rounded-lg text-sm bg-black/20 border border-[var(--border-soft)]">
+            {[25,50,100,200,500].map(n => <option key={n} value={n}>Fetch {n}</option>)}
+          </select>
+          <input type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)} className="px-3 py-2 rounded-lg text-sm bg-black/20 border border-[var(--border-soft)]" />
+          <input type="date" value={toDate} onChange={e=>setToDate(e.target.value)} className="px-3 py-2 rounded-lg text-sm bg-black/20 border border-[var(--border-soft)]" />
         </div>
+        <div className="mt-2 text-[11px] text-[var(--muted)]">Date range applies to Gmail fetch and local inbox filter. Use "in:inbox" to fetch all inbox mail.</div>
         {msg && <div className="mt-3 text-sm text-slate-200">{msg}</div>}
       </div>
 
@@ -137,8 +168,11 @@ export default function EmailAccess() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="glass rounded-2xl p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-sm text-cyan-200">Inbox</div>
+          <div className="flex flex-col gap-2 mb-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-sm text-cyan-200">Inbox <span className="text-[var(--muted)]">({visibleEmails.length})</span></div>
+              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search mail..." className="px-3 py-1.5 rounded-lg text-xs bg-black/20 border border-[var(--border-soft)] w-44" />
+            </div>
             <div className="flex flex-wrap gap-1">
               {CATEGORIES.map(c => (
                 <button key={c} onClick={()=>setCategory(c)}
@@ -147,8 +181,8 @@ export default function EmailAccess() {
             </div>
           </div>
           <div className="space-y-2 max-h-[26rem] overflow-auto">
-            {emails.length === 0 && <div className="text-sm text-[var(--muted)]">No emails stored yet. Connect Gmail and press “Fetch inbox”.</div>}
-            {emails.map(e => (
+            {visibleEmails.length === 0 && <div className="text-sm text-[var(--muted)]">No emails found for this filter. Try changing category/date or fetch inbox.</div>}
+            {visibleEmails.map(e => (
               <div key={e.id} className={`p-3 rounded-lg border ${selected?.id===e.id ? 'border-cyan-400/40 bg-cyan-500/5' : 'border-[var(--border-soft)] bg-black/20'}`}>
                 <div className="flex items-start justify-between gap-2">
                   <button onClick={()=>openEmail(e)} className="text-left">
