@@ -2,14 +2,17 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { api, type SystemStatus, type Proposal } from '../services/api'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
-import { LayoutDashboard, Bot, Search, Briefcase, FileUser, FolderKanban, CalendarClock, Workflow, BarChart3, Settings, Bell, Mic, Cpu, HardDrive, ShieldCheck, Menu, X, FileText, Mail, Wand2, Radio, Download, Smartphone, Moon, Sun } from 'lucide-react'
+import { LayoutDashboard, Bot, Search, Briefcase, FileUser, FolderKanban, CalendarClock, Workflow, BarChart3, Settings, Bell, Mic, Cpu, HardDrive, ShieldCheck, Menu, X, FileText, Mail, Wand2, Radio, Download, Smartphone, Moon, Sun} from 'lucide-react'
 
 let installPrompt: any = null
+
+function YoutubeIcon({size=16}:{size?:number}){return <svg width={size} height={size} viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'><path d='M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.55 49.55 0 0 1-16.2 0A2 2 0 0 1 2.5 17'/><path d='m10 15 5-3-5-3z'/></svg>}
 
 const nav = [
   { to: '/', label: 'Command Center', short: 'Home', icon: LayoutDashboard, end: true },
   { to: '/assistant', label: 'AI Assistant', short: 'Ask', icon: Bot },
   { to: '/voice', label: 'Voice Agent', short: 'Voice', icon: Radio },
+  { to: '/youtube', label: 'YouTube Downloader', short: 'YouTube', icon: YoutubeIcon },
   { to: '/jobs', label: 'Job Discovery', short: 'Discover', icon: Search },
   { to: '/matched', label: 'Matched Jobs', short: 'Matches', icon: Briefcase },
   { to: '/resume', label: 'Resume Intelligence', short: 'Resume', icon: FileUser },

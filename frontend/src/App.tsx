@@ -17,6 +17,7 @@ const Interviews = lazy(() => import('./pages/Interviews'))
 const AutomationCenter = lazy(() => import('./pages/AutomationCenter'))
 const Analytics = lazy(() => import('./pages/Analytics'))
 const Settings = lazy(() => import('./pages/Settings'))
+const YouTubeDownloader = lazy(() => import('./pages/YouTubeDownloader'))
 const Jobs = lazy(() => import('./pages/Jobs'))
 const Applications = lazy(() => import('./pages/Applications'))
 
@@ -45,6 +46,7 @@ export default function App() {
               <Route path="resume" element={<Suspense fallback={<PageFallback />}><ResumeIntelligence /></Suspense>} />
               <Route path="resume-generator" element={<Suspense fallback={<PageFallback />}><ResumeGenerator /></Suspense>} />
               <Route path="voice" element={<Suspense fallback={<PageFallback />}><VoiceAgent /></Suspense>} />
+              <Route path="youtube" element={<Suspense fallback={<PageFallback />}><YouTubeDownloader /></Suspense>} />
               <Route path="emails" element={<Suspense fallback={<PageFallback />}><EmailAccess /></Suspense>} />
               <Route path="documents" element={<Suspense fallback={<PageFallback />}><DocumentStudio /></Suspense>} />
               <Route path="applications" element={<Suspense fallback={<PageFallback />}><ApplicationManager /></Suspense>} />

@@ -40,6 +40,7 @@ DEMO_ALLOWED_EXACT = {
 
 DEMO_BLOCKED_PREFIXES = (
     "/gmail",
+    "/youtube",
     "/emails",
     "/files",
     "/developer",
