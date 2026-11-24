@@ -176,8 +176,8 @@ export default function Layout() {
                 <div className={`flex items-center gap-1.5 ${ollamaOk?'text-emerald-300':'text-amber-300'}`}><Bot size={14}/><span>{ollamaOk ? 'AI Ready' : 'AI Offline'}</span></div>
               </div>
               {installAvailable && !installed && (
-                <button onClick={installApp} className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-cyan-400/30 bg-cyan-500/10 text-cyan-200 text-xs">
-                  <Download size={14}/><span>Install</span>
+                <button onClick={installApp} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-cyan-400/30 bg-cyan-500/10 text-cyan-200 text-xs">
+                  <Download size={14}/><span className="hidden sm:inline">Install</span>
                 </button>
               )}
               <button onClick={toggleRest} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs ${resting ? 'bg-indigo-500/20 border-indigo-400/40 text-indigo-200' : 'bg-emerald-500/10 border-emerald-400/30 text-emerald-200'}`} title={resting ? 'Wake JARVIS' : 'Rest mode - pause automations'}>
@@ -188,7 +188,7 @@ export default function Layout() {
                 {pending > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-amber-400 text-black text-[10px] flex items-center justify-center font-semibold">{pending}</span>}
               </button>
               <button onClick={() => navigate('/voice')} className="p-2 rounded-lg hover:bg-white/5 text-cyan-300" title="Voice agent"><Mic size={16}/></button>
-              <button onClick={() => navigate('/settings')} className="hidden sm:flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 text-xs text-[var(--muted)]"><ShieldCheck size={14}/><span>Profile</span></button>
+              <button onClick={() => navigate('/settings')} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 text-xs text-[var(--muted)]" title="Settings"><ShieldCheck size={14}/><span className="hidden sm:inline">Profile</span></button>
             </div>
           </header>
           {status?.demo && (
@@ -196,6 +196,12 @@ export default function Layout() {
               Public demo: chat, voice and read-only pages are enabled. Email, files, uploads and automations are disabled.
             </div>
           )}
+          <div className="md:hidden border-b border-[var(--border-soft)] px-3 py-2 flex items-center gap-3 text-[11px] text-[var(--muted)] overflow-x-auto">
+            <div className="flex items-center gap-1.5 shrink-0"><Cpu size={13}/><span className={status && status.cpu_percent>85?'text-amber-300':''}>{status ? `${Math.round(status.cpu_percent)}%` : '--'}</span></div>
+            <div className="flex items-center gap-1.5 shrink-0"><HardDrive size={13}/><span className={status && status.ram_percent>85?'text-amber-300':''}>{status ? `${Math.round(status.ram_percent)}%` : '--'}</span></div>
+            <div className={`flex items-center gap-1.5 shrink-0 ${ollamaOk?'text-emerald-300':'text-amber-300'}`}><Bot size={13}/><span>{ollamaOk ? 'AI Ready' : 'AI Offline'}</span></div>
+            <div className="flex items-center gap-1.5 shrink-0 text-slate-400"><span>AI</span><span className="text-cyan-200/80 max-w-[140px] truncate">{status?.model || 'local'}</span></div>
+          </div>
           <main className="flex-1 p-3 sm:p-4 lg:p-6"><Outlet context={{ status, pending }} /></main>
         </div>
       </div>
