@@ -1,5 +1,5 @@
 ﻿from __future__ import annotations
-import json, os, re, subprocess, threading, time, uuid
+import json, os, re, shutil, subprocess, threading, time, uuid
 from pathlib import Path
 from typing import Any
 
@@ -7,6 +7,11 @@ ROOT = Path(__file__).resolve().parents[3]
 DATA_DIR = ROOT / "data" / "downloads" / "youtube"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 YTDLP = Path(__file__).resolve().parents[3] / "backend" / "scripts" / "yt-dlp.exe"
+FFMPEG = None
+for _cand in [shutil.which("ffmpeg"), r"C:\Users\Nanda Krishna\AppData\Local\Microsoft\WinGet\Links\ffmpeg.exe"]:
+    if _cand and Path(_cand).exists():
+        FFMPEG = str(Path(_cand))
+        break
 JOBS: dict[str, dict[str, Any]] = {}
 LOCK = threading.Lock()
 
@@ -32,7 +37,7 @@ def _run(cmd: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess
 def probe(url: str) -> dict:
     if not YTDLP.exists():
         return {"ok": False, "error": "yt-dlp.exe not found. Place it in backend/scripts/yt-dlp.exe."}
-    cmd = [str(YTDLP), "--dump-single-json", "--flat-playlist", "--no-warnings", url]
+    cmd = [str(YTDLP), "--dump-single-json", "--flat-playlist", "--no-warnings"] + (["--ffmpeg-location", FFMPEG] if FFMPEG else []) + [url]
     p = _run(cmd)
     if p.returncode != 0:
         return {"ok": False, "error": (p.stderr or p.stdout or "probe failed")[-500:]}
@@ -68,10 +73,11 @@ def _download_worker(job_id: str, url: str, mode: str):
     job_dir = DATA_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     out_tpl = str(job_dir / "%(title).120s [%(id)s].%(ext)s")
-    cmd = [str(YTDLP), "--newline", "--no-warnings", "-f", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best", "--merge-output-format", "mp4", "-o", out_tpl]
+    base = [str(YTDLP), "--newline", "--no-warnings"] + (["--ffmpeg-location", FFMPEG] if FFMPEG else [])
     if mode == "audio":
-        cmd = [str(YTDLP), "--newline", "--no-warnings", "-x", "--audio-format", "mp3", "-o", out_tpl]
-    cmd.append(url)
+        cmd = base + ["-x", "--audio-format", "mp3", "-o", out_tpl, url]
+    else:
+        cmd = base + ["-f", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best", "--merge-output-format", "mp4", "-o", out_tpl, url]
     with LOCK:
         j = JOBS[job_id]; j["status"] = "running"; j["updated_at"] = time.time(); j["command"] = cmd
     try:
