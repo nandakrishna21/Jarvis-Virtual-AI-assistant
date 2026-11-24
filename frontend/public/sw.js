@@ -1,9 +1,13 @@
 /* JARVIS service worker: offline app shell, always-fresh API. */
-const VERSION = 'jarvis-v18'
+const VERSION = 'jarvis-v19'
 const SHELL_CACHE = `${VERSION}-shell`
 const ASSET_CACHE = `${VERSION}-assets`
 
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png']
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting()
+})
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

@@ -61,7 +61,8 @@ export default function CommandCenter() {
       tasks: val(t, null),
       system: val(s, null),
     })
-    setMessages(prev => prev.length ? prev : [{ role: 'assistant', text: greeting?.message || 'Good day. I am JARVIS. Systems are initializing.' }])
+    const initial = greeting?.message || 'Good day. I am JARVIS. Systems are initializing.'
+    setMessages(prev => prev.length ? prev : [{ role: 'assistant', text: initial }])
     setLoading(false)
   }, [])
 
@@ -125,6 +126,7 @@ export default function CommandCenter() {
 
   const stats = b.greeting?.stats
   const pendingCount = b.pending.length
+  const [partOfDay] = useState(() => { const hour = new Date().getHours(); return hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening' })
   const briefing = useMemo(() => {
     const name = b.greeting?.name?.split(' ')[0] || 'there'
     const bits = [
@@ -133,8 +135,8 @@ export default function CommandCenter() {
       b.gmail?.connected ? `Gmail connected${b.gmail?.email ? ` (${b.gmail.email})` : ''}` : 'Gmail not connected',
       `${b.tasks?.overdue ?? 0} overdue task${(b.tasks?.overdue ?? 0) === 1 ? '' : 's'}`,
     ]
-    return `Good ${new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'}, ${name}. ${bits.join(' · ')}.`
-  }, [b.greeting, b.gmail, b.tasks, pendingCount, stats])
+    return `Good ${partOfDay}, ${name}. ${bits.join(' ? ')}.`
+  }, [b.greeting, b.gmail, b.tasks, pendingCount, stats, partOfDay])
 
   const quick = b.greeting?.quick_commands?.length ? b.greeting.quick_commands : [
     { label: 'Scan jobs', command: 'Find Python backend jobs in India' },

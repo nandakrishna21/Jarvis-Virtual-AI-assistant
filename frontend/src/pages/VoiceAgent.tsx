@@ -252,6 +252,7 @@ export default function VoiceAgent() {
   function submitVoice(text: string) {
     const clean = text.trim()
     if (!clean) return
+    // oxlint-disable-next-line react/purity
     const now = Date.now()
     if (clean === lastSentRef.current.text && now - lastSentRef.current.at < 1200) return
     if (wakeWordRef.current && !/\b(jarvis|javis|jarvus)\b/i.test(clean)) {
@@ -338,6 +339,7 @@ export default function VoiceAgent() {
       if (shouldListenRef.current) { setSttMode('whisper'); startWhisperCapture().catch(()=>{}); return true }
       return false
     }
+    // oxlint-disable-next-line react/purity
     recognitionRef.current = rec; listenStartedAt.current = Date.now(); statusRef.current = 'listening'; dispatch({ type: 'voice/status', payload: 'listening' }); setSttInfo('Browser speech recognition active.'); return true
   }
 
