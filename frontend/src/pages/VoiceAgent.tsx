@@ -62,6 +62,7 @@ export default function VoiceAgent() {
   const [sttMode, setSttMode] = useState<'browser' | 'whisper'>(() => (localStorage.getItem('jarvis.voice.sttMode') as any) === 'whisper' ? 'whisper' : 'browser')
   const [micLevel, setMicLevel] = useState(0)
   const [sttInfo, setSttInfo] = useState<string>('')
+  const mobileSttHint = typeof navigator !== 'undefined' && !/Chrome|Edg/i.test(navigator.userAgent)
   const [telemetry, setTelemetry] = useState({ restarts: 0, errors: 0, fallbacks: 0, last: 'idle' })
   const isIOS = typeof navigator !== 'undefined' && /iphone|ipad|ipod/i.test(navigator.userAgent)
 
@@ -274,6 +275,8 @@ export default function VoiceAgent() {
     window.setTimeout(() => {
       if (!shouldListenRef.current || !continuousRef.current) return
       if (speakingRef.current || statusRef.current === 'thinking' || recActiveRef.current) return
+      if (recorderRef.current?.state === 'recording') return
+      if (sttModeRef.current === 'whisper') { void startWhisperCapture().catch(() => {}); return }
       try { recognitionRef.current?.abort?.() } catch {}
       try { recognitionRef.current?.stop?.() } catch {}
       recognitionRef.current = null
@@ -422,6 +425,7 @@ export default function VoiceAgent() {
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className={`inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 ${status.color}`}><span className={`h-2 w-2 rounded-full ${status.dot}`} />{status.label}</span>
             <button onClick={() => setShowSettings(v => !v)} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-slate-300 hover:bg-white/10"><Settings2 size={13} />Settings</button>
+            {!/Chrome|Edg/i.test(navigator.userAgent) && sttMode !== 'whisper' && <button onClick={() => setSttMode('whisper')} className="inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-amber-500/10 px-3 py-1.5 text-amber-100 hover:bg-amber-500/20">Use Whisper on mobile</button>}
           </div>
         </div>
         {showSettings && (
@@ -434,6 +438,7 @@ export default function VoiceAgent() {
           </div>
         )}
         {error && <div className="mt-4 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200 flex items-start gap-2"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span>{error}</span></div>}
+        {mobileSttHint && sttMode !== 'whisper' && <div className="mt-3 rounded-xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-100">Mobile browser STT can be unreliable. If voice stops or misses commands, open <b>Settings → STT mode → Whisper fallback</b>.</div>}
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
