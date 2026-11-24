@@ -24,3 +24,6 @@ dist/
 *.db-wal
 *.db-shm
 *.db-journal
+
+# Local downloads
+data/downloads/
