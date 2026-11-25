@@ -22,8 +22,16 @@ export default function ApplicationManager() {
 
   async function decideLegacy(id: number, action: 'approve'|'reject') {
     setMsg(null)
-    try { const r = await api.post<any>(`/approvals/${id}/${action}`); setMsg(`Approval ${id}: ${r?.status || r?.application_status || 'done'}. ${r?.submission||''}`); load() }
-    catch(e:any){ setMsg(e?.message||'Failed') }
+    try {
+      const r = await api.post<any>(`/approvals/${id}/${action}`)
+      if (action === 'approve' && r?.open_url) {
+        window.open(r.open_url, '_blank', 'noopener,noreferrer')
+        setMsg('Approved. Opened the job page in a new tab — paste the prepared cover letter/answers and click submit.')
+      } else {
+        setMsg(`Approval ${id}: ${r?.status || r?.application_status || 'done'}. ${r?.submission || ''}`)
+      }
+      load()
+    } catch(e:any){ setMsg(e?.message||'Failed') }
   }
   async function decideAction(id: number, action: 'approve'|'reject') {
     setMsg(null)
@@ -85,7 +93,11 @@ export default function ApplicationManager() {
                       <div className="text-sm font-medium text-slate-100">Application #{a.id} · Job #{a.job_id}</div>
                       <div className="text-xs text-[var(--muted)] mt-0.5">{a.job?.title || ''} {a.job?.company ? `· ${a.job.company}`:''}</div>
                     </div>
-                    {a.job?.url && <a href={a.job.url} target="_blank" rel="noreferrer" className="text-cyan-300"><ExternalLink size={14}/></a>}
+                    {a.job?.url && (
+                      <a href={a.job.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-cyan-400/30 bg-cyan-500/10 text-cyan-200">
+                        <ExternalLink size={13}/> Open
+                      </a>
+                    )}
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <span className={`text-xs px-2 py-0.5 rounded-full border ${a.status==='Approved'||a.status==='Applied'||a.status==='Offer'?'border-emerald-400/30 text-emerald-300':a.status==='Rejected'||a.status==='Withdrawn'?'border-red-400/30 text-red-300':'border-cyan-400/20 text-cyan-100'}`}>{a.status}</span>
@@ -93,7 +105,7 @@ export default function ApplicationManager() {
                       {statuses.map(s=> <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
-                  <div className="mt-1 text-[11px] text-[var(--muted)]">Approval: {a.approval_status || 'n/a'} · Submission: manual only (never auto-submitted)</div>
+                  <div className="mt-1 text-[11px] text-[var(--muted)]">Approval: {a.approval_status || 'n/a'} · Submission: opens the job page for your final click (never auto-submitted)</div>
                 </div>
               ))}
             </div>

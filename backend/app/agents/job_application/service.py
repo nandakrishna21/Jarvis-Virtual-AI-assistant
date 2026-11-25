@@ -42,11 +42,24 @@ def decide(approval_id: int, approve: bool) -> dict:
         db.add(ApplicationHistory(application_id=appr.application_id, from_status=app_row.status, to_status=new_status,
                                   note="approved" if approve else "rejected by user"))
         app_row.status = new_status
+        job = db.get(Job, app_row.job_id) if app_row else None
+        job_url = job.url if job else None
         db.commit()
-        # On approval: NO auto-submit. Submission requires a separate permitted manual step.
-        return {"approval_id": approval_id, "status": appr.status, "application_status": new_status,
-                "submission": "NOT auto-submitted" if approve else "cancelled",
-                "next": "Use the original job URL to submit manually" if approve else "none"}
+        # On approval we never submit silently: we hand back the job URL so the
+        # user can review the prepared materials and finish the final click.
+        return {
+            "approval_id": approval_id,
+            "status": appr.status,
+            "application_status": new_status,
+            "submission": "open the job page and submit manually" if approve else "cancelled",
+            "job_url": job_url,
+            "open_url": job_url if approve else None,
+            "open_label": "Open application" if approve else None,
+            "job_title": job.title if job else None,
+            "cover_letter": app_row.cover_letter if app_row else None,
+            "answers": app_row.answers if app_row else None,
+            "next": "Open the job page, paste the prepared cover letter/answers, and click submit." if approve else "none",
+        }
     finally:
         db.close()
 

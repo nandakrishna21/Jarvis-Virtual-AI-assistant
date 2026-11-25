@@ -369,12 +369,15 @@ async def handle(message: str, db=None) -> dict:
             return {"ok": True, "intent": intent, "response": "\n".join(lines), "tasks": tasks[:15], "report": report}
 
         if intent == "gmail":
+            import asyncio
+
             from app.agents.gmail.service import fetch_and_store
             try:
-                emails = await fetch_and_store(20, "newer_than:14d")
+                result = await asyncio.to_thread(fetch_and_store, 20, "newer_than:14d")
             except Exception as e:
                 return {"ok": False, "intent": intent, "error": str(e),
                         "hint": "Gmail is not authenticated yet. Run scripts/gmail_auth.py (see docs/GMAIL_SETUP.md)."}
+            emails = result.get("emails", []) if isinstance(result, dict) else list(result or [])
             recruiter = [e for e in emails if e.get("category") in ("recruiter", "interview", "assessment")]
             lines = [f"Fetched {len(emails)} messages. Recruiter/interview/assessment: {len(recruiter)}."]
             for e in recruiter[:10]:

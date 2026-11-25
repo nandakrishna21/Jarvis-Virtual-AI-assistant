@@ -651,8 +651,25 @@ async def applications_approve(approval_id: int):
 
 @app.get("/applications")
 async def applications_list(db: Session = Depends(get_db)):
+    from app.database.models import Job
+
     rows = db.query(Application).order_by(Application.id.desc()).limit(50).all()
-    return [{"id": r.id, "job_id": r.job_id, "status": r.status, "created_at": str(r.created_at)} for r in rows]
+    out = []
+    for r in rows:
+        job = db.get(Job, r.job_id) if r.job_id else None
+        out.append({
+            "id": r.id,
+            "job_id": r.job_id,
+            "status": r.status,
+            "created_at": str(r.created_at),
+            "job": {
+                "title": job.title,
+                "company": job.company,
+                "url": job.url,
+                "location": job.location,
+            } if job else None,
+        })
+    return out
 
 @app.get("/applications/{app_id}")
 async def application_detail(app_id: int, db: Session = Depends(get_db)):
