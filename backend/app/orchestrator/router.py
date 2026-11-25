@@ -3,7 +3,10 @@ import re
 from app.services.llm import chat as ollama_chat
 from app.services import proposals
 
+SYSTEM_KEYS = ["diagnostic", "diagnostics", "quick scan", "system scan", "system status", "system info", "laptop status", "pc status", "storage", "disk space", "free space", "ram", "memory usage", "cpu usage", "how much ram", "how much memory", "battery", "health check"]
+
 INTENTS = [
+    ("system", SYSTEM_KEYS),
     ("tasks", ["show my task", "my task", "pending task", "remind me", "add task", "to do list",
                "overdue", "productivity report", "what should i complete", "my schedule"]),
     ("gmail", ["gmail", "email", "emails", "recruiter mail", "inbox", "unread mail"]),
@@ -254,6 +257,26 @@ def _handle_open_site(message: str) -> dict:
     }
 
 
+async def _handle_system_query(message: str) -> dict:
+    """Run a read-only local diagnostics scan (CPU, RAM, disk, battery)."""
+    import asyncio
+
+    from app.services import system_diagnostics
+
+    low = message.lower()
+    include_openjarvis = any(k in low for k in ("openjarvis", "open jarvis", "doctor"))
+    try:
+        scan = await asyncio.to_thread(system_diagnostics.quick_scan, include_openjarvis)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "intent": "system", "error": f"Diagnostics failed: {exc}"}
+    return {
+        "ok": True,
+        "intent": "system",
+        "response": system_diagnostics.summarize(scan),
+        "diagnostics": scan,
+    }
+
+
 async def _handle_weather(message: str) -> dict:
     from app.services import weather as weather_service
 
@@ -283,6 +306,8 @@ async def handle(message: str, db=None) -> dict:
             return _handle_open_site(message)
         if intent == "weather":
             return await _handle_weather(message)
+        if intent == "system":
+            return await _handle_system_query(message)
         if intent == "automation":
             return await _handle_automation_action(message, db)
         if intent == "interview":

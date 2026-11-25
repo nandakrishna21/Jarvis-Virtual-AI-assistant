@@ -306,6 +306,14 @@ async def chat(req: ChatRequest):
 async def metrics():
     return await status()
 
+@app.get("/system/diagnostics")
+async def system_diagnostics_endpoint(include_openjarvis: bool = False):
+    from app.services import system_diagnostics
+
+    scan = await run_in_threadpool(system_diagnostics.quick_scan, include_openjarvis)
+    scan["summary"] = system_diagnostics.summarize(scan)
+    return scan
+
 @app.get("/system/auth")
 async def system_auth():
     status = auth_service.status()
@@ -1087,6 +1095,7 @@ async def voice_agent_help():
             "Start my SSC CGL preparation",
             "Show pending approvals",
             "Run the daily report workflow",
+            "Run a quick system scan: RAM, storage and CPU",
             "Open the analytics overview",
         ],
         "notes": [
