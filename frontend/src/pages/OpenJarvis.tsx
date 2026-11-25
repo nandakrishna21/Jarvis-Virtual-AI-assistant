@@ -22,9 +22,10 @@ export default function OpenJarvisPage() {
         <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
           <div className="text-sm font-medium text-slate-100 flex items-center gap-2 mb-3"><FolderGit2 size={15} className="text-cyan-300"/>Status</div>
           <div className="space-y-2 text-sm">
-            {['installed','submodule','uv_available','jarvis_version','path'].map(k => (
+            {['installed','submodule','uv_available','jarvis_version','path','approval_required'].map(k => (
               <div key={k} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2"><span className="text-slate-400">{k}</span><span className="text-slate-200 text-right break-all">{String(status?.[k] ?? '...')}</span></div>
             ))}
+            <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2"><div className="text-slate-400 mb-1">extras_installed_hint</div><div className="text-slate-200 text-xs break-all">{(status?.extras_installed_hint||[]).join(', ') || '...'}</div></div>
           </div>
         </div>
         <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
