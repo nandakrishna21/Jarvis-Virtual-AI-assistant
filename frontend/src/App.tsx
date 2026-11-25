@@ -18,6 +18,7 @@ const AutomationCenter = lazy(() => import('./pages/AutomationCenter'))
 const Analytics = lazy(() => import('./pages/Analytics'))
 const Settings = lazy(() => import('./pages/Settings'))
 const YouTubeDownloader = lazy(() => import('./pages/YouTubeDownloader'))
+const OpenJarvisPage = lazy(() => import('./pages/OpenJarvis'))
 const Jobs = lazy(() => import('./pages/Jobs'))
 const Applications = lazy(() => import('./pages/Applications'))
 
@@ -54,6 +55,7 @@ export default function App() {
               <Route path="interviews" element={<Suspense fallback={<PageFallback />}><Interviews /></Suspense>} />
               <Route path="automation" element={<Suspense fallback={<PageFallback />}><AutomationCenter /></Suspense>} />
               <Route path="analytics" element={<Suspense fallback={<PageFallback />}><Analytics /></Suspense>} />
+              <Route path="openjarvis" element={<Suspense fallback={<PageFallback />}><OpenJarvisPage /></Suspense>} />
               <Route path="settings" element={<Suspense fallback={<PageFallback />}><Settings /></Suspense>} />
             </Route>
           </Routes>

@@ -23,6 +23,7 @@ const nav = [
   { to: '/interviews', label: 'Interview Tracker', short: 'Interviews', icon: CalendarClock },
   { to: '/automation', label: 'Automation Center', short: 'Automation', icon: Workflow },
   { to: '/analytics', label: 'Analytics', short: 'Stats', icon: BarChart3 },
+  { to: '/openjarvis', label: 'OpenJarvis', short: 'OpenJ', icon: Bot },
   { to: '/settings', label: 'Settings', short: 'Settings', icon: Settings },
 ]
 

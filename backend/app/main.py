@@ -57,6 +57,7 @@ from app.api import resumes as resumes_api
 from app.api import resume_generator as resume_generator_api
 from app.api import weather as weather_api
 from app.api import youtube as youtube_api
+from app.api import openjarvis as openjarvis_api
 
 logger = get_logger("jarvis.api")
 
@@ -261,6 +262,7 @@ app.include_router(resumes_api.router)
 app.include_router(resume_generator_api.router)
 app.include_router(weather_api.router)
 app.include_router(youtube_api.router)
+app.include_router(openjarvis_api.router)
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)

@@ -1,0 +1,3 @@
+[submodule "external/OpenJarvis"]
+	path = external/OpenJarvis
+	url = https://github.com/open-jarvis/OpenJarvis.git
