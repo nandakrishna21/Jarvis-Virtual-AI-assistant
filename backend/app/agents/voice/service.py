@@ -1,6 +1,8 @@
 import os, re, tempfile, threading, time
 from pathlib import Path
 
+from app.config import settings
+
 TEMP_DIR = Path(os.environ.get("JARVIS_TEMP_DIR", r"C:\JARVIS\data\temp"))
 WHISPER_MODEL = os.environ.get("JARVIS_WHISPER_MODEL", "tiny")
 
@@ -15,12 +17,35 @@ _state = {
 _lock = threading.Lock()
 
 
+def _whisper_available() -> bool:
+    try:
+        import faster_whisper  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+def _gemini_available() -> bool:
+    try:
+        from app.services import gemini_voice
+        return gemini_voice.available()
+    except Exception:
+        return False
+
+
 def status() -> dict:
+    pref = (settings.stt_engine or "auto").strip().lower()
+    gemini_ok = _gemini_available()
+    whisper_ok = _whisper_available()
     return {
-        "stt_available": _state["model"] is not None or not _state["error"],
+        "stt_available": gemini_ok or whisper_ok,
         "stt_loaded": _state["model"] is not None,
         "stt_loading": _state["loading"],
         "stt_engine": _state["engine"],
+        "stt_engine_pref": pref,
+        "gemini_available": gemini_ok,
+        "gemini_model": settings.gemini_stt_model,
+        "whisper_available": whisper_ok,
         "whisper_model": WHISPER_MODEL,
         "model_load_seconds": round(_state["load_seconds"], 1),
         "last_used": _state["last_used"],
@@ -63,6 +88,26 @@ def _get_model():
 def transcribe(audio_bytes: bytes, filename: str = "clip.webm") -> dict:
     if not audio_bytes:
         return {"error": "empty audio"}
+
+    pref = (settings.stt_engine or "auto").strip().lower()
+    gemini_error = None
+    if pref in ("auto", "gemini") and _gemini_available():
+        try:
+            from app.services import gemini_voice
+            res = gemini_voice.transcribe(audio_bytes, filename)
+        except Exception as e:  # noqa: BLE001
+            res = {"error": str(e)}
+        if res.get("text"):
+            _state["last_used"] = time.time()
+            _state["engine"] = f"gemini ({res.get('model', 'gemini')})"
+            return {
+                "text": res["text"],
+                "elapsed": res.get("elapsed"),
+                "engine": _state["engine"],
+                "provider": "gemini",
+            }
+        gemini_error = res.get("error")
+
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
     suffix = Path(filename).suffix or ".webm"
     with tempfile.NamedTemporaryFile(delete=False, dir=str(TEMP_DIR), suffix=suffix) as f:
@@ -81,7 +126,10 @@ def transcribe(audio_bytes: bytes, filename: str = "clip.webm") -> dict:
             "engine": _state["engine"],
         }
     except Exception as e:
-        return {"error": str(e), "hint": "The first request downloads/loads the local Whisper model. Retry in a moment."}
+        hint = "The first request downloads/loads the local Whisper model. Retry in a moment."
+        if gemini_error:
+            hint = f"Gemini STT failed ({gemini_error}); local Whisper also failed. {hint}"
+        return {"error": str(e), "hint": hint}
     finally:
         try:
             os.unlink(temp_path)

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../services/api'
-import { Settings as SettingsIcon, Save, Play, Pause, RotateCw, Cpu, ShieldCheck } from 'lucide-react'
+import { Settings as SettingsIcon, Save, Play, Pause, RotateCw, Cpu, ShieldCheck, Download } from 'lucide-react'
 
 export default function Settings() {
   const [profile, setProfile] = useState<any>(null)
@@ -38,6 +38,21 @@ export default function Settings() {
 
   function setList(key:string, value:string) { setProfile({...profile, [key]: value.split(',').map(s=>s.trim()).filter(Boolean)}) }
 
+  async function forceUpdate() {
+    setMsg('Clearing cache and fetching the latest version...')
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations()
+        await Promise.all(regs.map(r => r.unregister()))
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys()
+        await Promise.all(keys.map(k => caches.delete(k)))
+      }
+    } catch {}
+    window.location.reload()
+  }
+
   return (
     <div className="space-y-4">
       <div className="glass-strong rounded-2xl p-5 flex items-center justify-between">
@@ -45,7 +60,10 @@ export default function Settings() {
           <div className="flex items-center gap-2 text-cyan-100"><SettingsIcon size={18}/><h1 className="text-lg font-semibold">Settings</h1></div>
           <p className="text-sm text-[var(--muted)] mt-1">Preferences, automations, integrations and startup.</p>
         </div>
-        <button onClick={load} className="p-2 rounded-lg border border-[var(--border-soft)] text-[var(--muted)]"><RotateCw size={14}/></button>
+        <div className="flex items-center gap-2">
+          <button onClick={forceUpdate} className="px-3 py-2 rounded-lg border border-cyan-400/30 bg-cyan-500/10 text-cyan-200 text-xs inline-flex items-center gap-1.5"><Download size={14}/>Update app</button>
+          <button onClick={load} className="p-2 rounded-lg border border-[var(--border-soft)] text-[var(--muted)]"><RotateCw size={14}/></button>
+        </div>
       </div>
       {msg && <div className="glass rounded-xl p-3 text-sm text-slate-200 break-all">{msg}</div>}
 

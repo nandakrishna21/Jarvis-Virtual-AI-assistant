@@ -14,7 +14,7 @@ from app.services import ollama
 
 logger = logging.getLogger("jarvis.llm")
 
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 PROVIDERS = ("ollama", "gemini", "openrouter", "nvidia")
 
@@ -51,7 +51,7 @@ def provider_status() -> dict:
         "fallback": "ollama",
         "models": {
             "ollama": settings.ollama_model,
-            "gemini": "gemini-2.0-flash",
+            "gemini": settings.gemini_model,
             "openrouter": settings.openrouter_model,
             "nvidia": settings.nvidia_model,
         },
@@ -116,9 +116,10 @@ async def _gemini(prompt: str, system: str | None) -> dict:
         "generationConfig": {"temperature": 0.3, "maxOutputTokens": settings.ollama_num_predict},
     }
     payload = {k: v for k, v in payload.items() if v is not None}
+    model = (settings.gemini_model or "gemini-3.5-flash").strip()
     async with httpx.AsyncClient(timeout=120) as c:
         r = await c.post(
-            f"{GEMINI_URL}?key={settings.gemini_api_key}",
+            f"{GEMINI_BASE}/{model}:generateContent?key={settings.gemini_api_key}",
             json=payload,
             headers={"Content-Type": "application/json"},
         )
@@ -128,7 +129,7 @@ async def _gemini(prompt: str, system: str | None) -> dict:
     for candidate in data.get("candidates", []):
         for part in candidate.get("content", {}).get("parts", []):
             text += part.get("text", "")
-    return {"ok": True, "response": text, "model": "gemini-2.0-flash",
+    return {"ok": True, "response": text, "model": model,
             "elapsed": round(time.time() - start, 2), "provider": "gemini"}
 
 

@@ -1073,7 +1073,7 @@ async def voice_status():
 @app.post("/voice/transcribe")
 async def voice_transcribe(audio: UploadFile = File(...)):
     data = await audio.read()
-    return voice_service.transcribe(data, audio.filename or "clip.webm")
+    return await run_in_threadpool(voice_service.transcribe, data, audio.filename or "clip.webm")
 
 class TtsReq(BaseModel):
     text: str

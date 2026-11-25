@@ -34,12 +34,16 @@ class Settings(BaseSettings):
     n8n_enabled: bool = True
     llm_provider: str = "ollama"  # ollama/gemini/openrouter/nvidia
     gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.5-flash"
     openrouter_api_key: str = ""
     openrouter_model: str = "google/gemini-2.0-flash-exp:free"
     nvidia_api_key: str = ""
     nvidia_model: str = "nvidia/nemotron-3.5-bolt-e4b"
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
     nvidia_fallback_models: str = "meta/muse-glimmer-30b,nvidia/nemotron-3.5-lightning-30b-a3b"
+    # Voice input engine: auto (Gemini if key present, else Whisper) | gemini | whisper
+    stt_engine: str = Field("auto", validation_alias=AliasChoices("JARVIS_STT_ENGINE", "stt_engine"))
+    gemini_stt_model: str = Field("gemini-3.5-flash", validation_alias=AliasChoices("GEMINI_STT_MODEL", "gemini_stt_model"))
     # Apify job scraping (optional). The actor must accept query/location/count.
     apify_token: str = Field("", validation_alias=AliasChoices("APIFY_API_KEY", "APIFY_TOKEN", "apify_token"))
     apify_actor: str = Field(
