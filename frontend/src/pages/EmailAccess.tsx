@@ -23,6 +23,7 @@ export default function EmailAccess() {
   const [search, setSearch] = useState('')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
+  const [showAdvanced, setShowAdvanced] = useState(false)
 
   async function loadAll() {
     try {
@@ -64,8 +65,10 @@ export default function EmailAccess() {
 
   function gmailQuery() {
     let q = query.trim()
-    if (fromDate) q += ` after:${fromDate.replaceAll('-', '/')}`
-    if (toDate) q += ` before:${toDate.replaceAll('-', '/')}`
+    const hasDates = !!fromDate || !!toDate
+    if (hasDates && q === 'newer_than:30d') q = ''
+    if (fromDate) q += `${q ? ' ' : ''}after:${fromDate.replaceAll('-', '/')}`
+    if (toDate) q += `${q ? ' ' : ''}before:${toDate.replaceAll('-', '/')}`
     return q.trim() || 'newer_than:30d'
   }
 
@@ -127,18 +130,48 @@ export default function EmailAccess() {
     <div className="space-y-4">
       <div className="glass-strong rounded-2xl p-5">
         <div className="flex items-center gap-2 text-cyan-100"><Mail size={18}/><h1 className="text-lg font-semibold">Email Access</h1></div>
-        <p className="text-sm text-[var(--muted)] mt-1">Connect your inbox so JARVIS can read recruiter emails and prepare replies. You keep the send button - JARVIS never sends mail on its own.</p>
-        <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-[auto_auto_1fr_160px_140px_140px]">
-          <button onClick={fetchNow} disabled={busy || !connected} className="px-4 py-2 rounded-lg bg-cyan-500/20 border border-cyan-400/30 text-cyan-100 hover:bg-cyan-500/30 disabled:opacity-50 inline-flex items-center justify-center gap-2"><Download size={14}/>{busy ? 'Working...' : 'Fetch inbox'}</button>
-          <button onClick={() => void loadAll()} className="px-3 py-2 rounded-lg border border-[var(--border-soft)] text-[var(--muted)] hover:text-cyan-200 inline-flex items-center justify-center gap-2"><RefreshCw size={14}/>Refresh</button>
-          <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Gmail query, e.g. newer_than:30d or in:inbox" className="px-3 py-2 rounded-lg text-sm bg-black/20 border border-[var(--border-soft)]" />
-          <select value={maxResults} onChange={e=>setMaxResults(Number(e.target.value))} className="px-3 py-2 rounded-lg text-sm bg-black/20 border border-[var(--border-soft)]">
-            {[25,50,100,200,500].map(n => <option key={n} value={n}>Fetch {n}</option>)}
-          </select>
-          <input type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)} className="px-3 py-2 rounded-lg text-sm bg-black/20 border border-[var(--border-soft)]" />
-          <input type="date" value={toDate} onChange={e=>setToDate(e.target.value)} className="px-3 py-2 rounded-lg text-sm bg-black/20 border border-[var(--border-soft)]" />
+        <p className="text-sm text-[var(--muted)] mt-1 max-w-2xl">Read recruiter mail and prepare replies. You always send - JARVIS never sends on its own.</p>
+
+        <div className="mt-4 flex flex-wrap items-end gap-2 sm:gap-3">
+          <div className="flex items-end gap-2">
+            <div>
+              <label className="block text-[11px] text-[var(--muted)] mb-1">Fetch</label>
+              <div className="flex gap-2">
+                <button onClick={fetchNow} disabled={busy || !connected} className="px-4 py-2 rounded-lg bg-cyan-500/20 border border-cyan-400/30 text-cyan-100 hover:bg-cyan-500/30 disabled:opacity-50 inline-flex items-center justify-center gap-2"><Download size={14}/>{busy ? 'Fetching...' : 'Fetch inbox'}</button>
+                <select value={maxResults} onChange={e=>setMaxResults(Number(e.target.value))} className="px-3 py-2 rounded-lg text-sm bg-black/20 border border-[var(--border-soft)]" title="How many emails to fetch">
+                  {[25,50,100,200,500].map(n => <option key={n} value={n}>{n} emails</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[11px] text-[var(--muted)] mb-1">From</label>
+            <input type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)} className="px-3 py-2 rounded-lg text-sm bg-black/20 border border-[var(--border-soft)]" />
+          </div>
+          <div>
+            <label className="block text-[11px] text-[var(--muted)] mb-1">To</label>
+            <input type="date" value={toDate} onChange={e=>setToDate(e.target.value)} className="px-3 py-2 rounded-lg text-sm bg-black/20 border border-[var(--border-soft)]" />
+          </div>
+          {(fromDate || toDate) && (
+            <button onClick={()=>{setFromDate('');setToDate('')}} className="px-3 py-2 rounded-lg border border-[var(--border-soft)] text-xs text-[var(--muted)] hover:text-cyan-200">Clear dates</button>
+          )}
+
+          <div className="ml-auto flex gap-2">
+            <button onClick={()=>setShowAdvanced(v=>!v)} className={`px-3 py-2 rounded-lg border text-xs inline-flex items-center gap-1.5 ${showAdvanced ? 'border-cyan-400/40 text-cyan-200 bg-cyan-500/10' : 'border-[var(--border-soft)] text-[var(--muted)] hover:text-cyan-200'}`}>Advanced</button>
+            <button onClick={() => void loadAll()} className="px-3 py-2 rounded-lg border border-[var(--border-soft)] text-[var(--muted)] hover:text-cyan-200 inline-flex items-center gap-2"><RefreshCw size={14}/>Refresh</button>
+          </div>
         </div>
-        <div className="mt-2 text-[11px] text-[var(--muted)]">Date range applies to Gmail fetch and local inbox filter. Use "in:inbox" to fetch all inbox mail.</div>
+
+        {showAdvanced && (
+          <div className="mt-3">
+            <label className="block text-[11px] text-[var(--muted)] mb-1">Gmail search query</label>
+            <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="newer_than:30d, in:inbox, from:recruiter..." className="w-full px-3 py-2 rounded-lg text-sm bg-black/20 border border-[var(--border-soft)]" />
+            <div className="mt-1 text-[11px] text-[var(--muted)]">Leave empty to rely on the date range. Use <code className="text-cyan-200">in:inbox</code> to scan the whole inbox.</div>
+          </div>
+        )}
+
+        <div className="mt-2 text-[11px] text-[var(--muted)]">The date range filters both the Gmail fetch and the list below.</div>
         {msg && <div className="mt-3 text-sm text-slate-200">{msg}</div>}
       </div>
 
